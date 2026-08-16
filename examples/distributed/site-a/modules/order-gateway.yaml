@@ -1,0 +1,6 @@
+name: order-gateway
+file: ./order-gateway.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "order:new"

@@ -1,0 +1,15 @@
+name: bridge
+file: ./bridge.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "order:done"
+config:
+  remote: http://127.0.0.1:3091
+  pollMs: 1000
+  forward:
+    - local: "order:done"
+      to: "order:done"
+  mirror:
+    - local: "mirror:remote-pending"
+      remote: "orders:pending"

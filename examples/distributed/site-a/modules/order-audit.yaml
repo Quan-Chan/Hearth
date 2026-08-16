@@ -1,0 +1,6 @@
+name: order-audit
+file: ./order-audit.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "order:done"
