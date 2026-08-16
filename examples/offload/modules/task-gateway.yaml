@@ -1,0 +1,6 @@
+name: task-gateway
+file: ./task-gateway.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "task:compute"

@@ -1,0 +1,6 @@
+name: local-heavy
+file: ./local-heavy.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "task:local"

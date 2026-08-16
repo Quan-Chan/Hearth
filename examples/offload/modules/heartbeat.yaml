@@ -1,0 +1,6 @@
+name: heartbeat
+file: ./heartbeat.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "hb:tick"

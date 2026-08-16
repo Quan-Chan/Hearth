@@ -24,7 +24,8 @@
     "demo:web": "node examples/web-demo/server.cjs",
     "demo:site-a": "node examples/distributed/server.cjs a",
     "demo:site-b": "node examples/distributed/server.cjs b",
-    "demo:fileguard": "node examples/fileguard/server.cjs"
+    "demo:fileguard": "node examples/fileguard/server.cjs",
+    "demo:offload": "node examples/offload/server.cjs"
   },
   "dependencies": {
     "yaml": "^2.5.1"
