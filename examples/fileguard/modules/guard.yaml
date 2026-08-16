@@ -1,0 +1,12 @@
+name: guard
+file: ./guard.cjs
+startEvents:
+  - "core:startup"
+config:
+  pollMs: 500
+  allowEvents:
+    - "stock:add"
+    - "stock:clear"
+  exports:
+    - name: "inventory:items"
+      file: "inventory-items.jsonl"
