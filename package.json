@@ -20,7 +20,8 @@
     "test:unit": "tsc -p tsconfig.test.json && node --test-isolation=none --test \".test-build/tests/unit/**/*.test.js\"",
     "test:integration": "tsc -p tsconfig.test.json && node --test-isolation=none --test \".test-build/tests/integration/**/*.test.js\"",
     "test:apps": "tsc -p tsconfig.test.json && node --test-isolation=none --test \".test-build/tests/apps/**/*.test.js\"",
-    "demo": "node examples/basic/demo.cjs"
+    "demo": "node examples/basic/demo.cjs",
+    "demo:web": "node examples/web-demo/server.cjs"
   },
   "dependencies": {
     "yaml": "^2.5.1"

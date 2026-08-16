@@ -1,0 +1,6 @@
+name: notifier
+file: ./notifier.cjs
+startEvents:
+  - "alarm:fired"
+listen:
+  - "alarm:fired"
