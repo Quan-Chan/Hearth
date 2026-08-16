@@ -1,0 +1,8 @@
+name: alerting
+file: ./alerting.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "app:metric"
+config:
+  threshold: 100

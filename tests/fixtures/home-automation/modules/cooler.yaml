@@ -1,0 +1,6 @@
+name: cooler
+file: ./cooler.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "home:cooling"

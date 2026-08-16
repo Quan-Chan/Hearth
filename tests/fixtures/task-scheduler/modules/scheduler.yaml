@@ -1,0 +1,7 @@
+name: scheduler
+file: ./scheduler.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "task:submit"
+  - "task:cancel"

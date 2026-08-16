@@ -1,0 +1,6 @@
+name: sensor
+file: ./sensor.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "home:motion"

@@ -1,0 +1,6 @@
+name: dashboard
+file: ./dashboard.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "alert:fired"

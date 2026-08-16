@@ -1,0 +1,6 @@
+name: help
+file: ./help.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "chat:command"

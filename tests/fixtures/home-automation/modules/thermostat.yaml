@@ -1,0 +1,7 @@
+name: thermostat
+file: ./thermostat.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "home:temperature"
+  - "home:cooling"

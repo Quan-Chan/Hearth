@@ -1,0 +1,6 @@
+name: echo
+file: ./echo.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "chat:command"

@@ -1,0 +1,6 @@
+name: greeter
+file: ./greeter.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "greet"

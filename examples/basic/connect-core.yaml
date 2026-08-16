@@ -1,0 +1,5 @@
+core:
+  moduleDir: ./modules
+  logFile: ./logs/event-stream.log
+  watch: true
+  logToConsole: true

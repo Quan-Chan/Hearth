@@ -1,0 +1,6 @@
+name: light
+file: ./light.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "home:motion"

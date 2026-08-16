@@ -1,0 +1,6 @@
+name: worker
+file: ./worker.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "task:due"

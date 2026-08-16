@@ -1,0 +1,10 @@
+// 执行器：任务到期后执行（模拟），写入完成结果
+module.exports = {
+  name: 'worker',
+  onEvent(ctx, event) {
+    if (event.name !== 'task:due') return;
+    const t = event.data;
+    ctx.editArray('tasks:done', { type: 'push', value: { id: t.id, name: t.name, status: 'done', completedAt: Date.now() } });
+    ctx.sendEvent('task:done', { id: t.id, name: t.name });
+  },
+};
