@@ -7,7 +7,8 @@
  *   3. message 日志信息：人类可读的具体内容（如事件名、原因描述）
  *
  * 命名统一 kebab-case（域-动作）；附加字段（event/data/recipients/reason/error）保留结构化数据。
- * 文件落盘 JSONL 原样保真，控制台/演示输出走 formatLogEntry 人类可读格式。
+ * 日志是一条连续的时间线：发生什么就记录什么，按时间顺序逐条输出（formatLogEntry）。
+ * 需要分区/过滤时直接按 type 过滤（categoryOf / byCategory），不在展示层做分区。
  */
 import type { LogEntry } from './EventStreamLog';
 
@@ -58,16 +59,6 @@ export function categoryOf(type: string): LogCategory {
   return TYPE_TO_CATEGORY[type] ?? 'error';
 }
 
-/** 类别的中文标题（分组展示用）。 */
-export const CATEGORY_TITLES: Record<LogCategory, string> = {
-  core: '核心生命周期',
-  event: '事件处理',
-  module: '模块生命周期',
-  config: '配置热加载',
-  log: '模块日志',
-  error: '错误',
-};
-
 /** 人类可读单行日志：HH:MM:SS.mmm [type] source: message  附加关键字段。 */
 export function formatLogEntry(entry: LogEntry): string {
   const t = (entry.t ?? '').slice(11, 23);
@@ -98,15 +89,7 @@ export function formatLogEntry(entry: LogEntry): string {
   return extra.length > 0 ? line + '  [' + extra.join('  ') + ']' : line;
 }
 
-/** 把日志按类别分组（演示/人读用），保持时间顺序。 */
-export function groupLogEntries(entries: LogEntry[]): { category: LogCategory; title: string; lines: string[] }[] {
-  const groups = new Map<LogCategory, string[]>();
-  for (const e of entries) {
-    const cat = categoryOf(String(e.type));
-    const list = groups.get(cat) ?? [];
-    list.push(formatLogEntry(e));
-    groups.set(cat, list);
-  }
-  const order: LogCategory[] = ['core', 'event', 'module', 'config', 'log', 'error'];
-  return order.filter((c) => groups.has(c)).map((c) => ({ category: c, title: CATEGORY_TITLES[c], lines: groups.get(c)! }));
+/** 日志类型 -> 类别过滤（等价于对 JSONL 做 grep），展示层不做分区。 */
+export function filterByCategory(entries: LogEntry[], category: LogCategory): LogEntry[] {
+  return entries.filter((e) => categoryOf(String(e.type)) === category);
 }

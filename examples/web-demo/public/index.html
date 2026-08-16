@@ -34,11 +34,12 @@
   .arr .len { font-size: 11px; color: #7dd3fc; margin-left: 8px; }
   .arr pre { max-height: 150px; overflow: auto; font-size: 11px; color: #cbd5e1; margin-top: 6px; white-space: pre-wrap; word-break: break-all; }
   .lg { font-family: Consolas, monospace; font-size: 12px; max-height: 480px; overflow-y: auto; }
-  .lg .g { margin-bottom: 10px; }
-  .lg .gt { color: #7dd3fc; font-weight: 600; margin-bottom: 4px; font-size: 12px; }
   .lg .l { padding: 1px 0; color: #cbd5e1; white-space: nowrap; }
   .lg .l.error { color: #f87171; }
   .lg .l.event-drop { color: #fbbf24; }
+  .lg .l.event { color: #7dd3fc; }
+  .lg .l.module-start { color: #4ade80; }
+  .lg .l.module-stop { color: #fca5a5; }
   .empty { color: #64748b; font-size: 12px; }
   .statusline { font-size: 12px; color: #4ade80; margin-bottom: 10px; }
   .hint { font-size: 11px; color: #64748b; margin-top: 6px; }
@@ -101,7 +102,7 @@
     </div>
     <!-- 日志 -->
     <div class="panel">
-      <h2>📜 事件流水日志（type / source / message）</h2>
+      <h2>📜 事件流水日志（连续时间线 · type / source / message）</h2>
       <div class="lg" id="logs"></div>
     </div>
   </div>
@@ -160,15 +161,17 @@ function renderArrays(arrays) {
   }).join('');
 }
 
-function renderLogs(groups) {
+function renderLogs(logs) {
   var box = $('logs');
   var scrollAtBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-  box.innerHTML = groups.map(function (g) {
-    var rows = g.lines.map(function (l) {
-      var cls = g.category === 'error' ? 'error' : (l.indexOf('[event-drop]') >= 0 ? 'event-drop' : '');
-      return '<div class="l ' + cls + '">' + esc(l) + '</div>';
-    }).join('');
-    return '<div class="g"><div class="gt">── ' + esc(g.title) + '（' + g.lines.length + '）──</div>' + rows + '</div>';
+  // 连续时间线：发生什么就记录什么，按时间顺序逐条显示；颜色只做快速扫描辅助
+  box.innerHTML = logs.map(function (l) {
+    var cls = 'l ' + l.category;
+    if (l.category === 'error') cls = 'l error';
+    else if (l.category === 'event') cls = 'l event';
+    else if (l.type === 'module-start') cls = 'l module-start';
+    else if (l.type === 'module-stop') cls = 'l module-stop';
+    return '<div class="' + cls + '">' + esc(l.line) + '</div>';
   }).join('');
   if (scrollAtBottom) box.scrollTop = box.scrollHeight;
 }
@@ -182,7 +185,7 @@ async function refresh() {
       : '⛔ 核心未运行';
     renderModules(state.modules);
     renderArrays(state.arrays);
-    renderLogs(state.logGroups);
+    renderLogs(state.logs);
   } catch (e) { /* 服务器未就绪 */ }
 }
 

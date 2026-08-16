@@ -107,18 +107,18 @@ module.exports = {
 
 > 数组操作（公开/编辑/读取）**不记录日志**——数组是模块间的数据通道，可能是高频流式操作，逐条记录会撑爆日志。
 
-落盘为 JSONL（`logs/event-stream.log`），控制台/演示按类别分组展示：
+日志是一条**连续的时间线**：发生什么就记录什么，按发生顺序逐条输出，不需要脑内排序。需要分区/过滤时，直接对 JSONL 按 `type` 过滤（等价于 grep），不在展示层做分区。落盘为 JSONL（`logs/event-stream.log`），人类可读格式示例：
 
 ```
-── 事件处理 ──
-  12:05:31.046 [event-drop] core: core:startup
-  12:05:31.047 [event] external: echo  [转发=echo  data={"text":"世界"}]
-  12:05:31.047 [event] echo: greet  [转发=greeter  data={"name":"世界"}]
-  12:05:31.047 [event-drop] external: no:one-listens  [data={"note":"测试丢弃"}]
-
-── 模块生命周期 ──
-  12:05:31.046 [module-start] greeter: 事件 core:startup 匹配启动条件  [reason=core:startup]
-  12:05:31.047 [module-stop] greeter: 关闭模块，清理 1 个公共数组  [清理数组=greetings]
+12:05:31.032 [core-start] core: 核心启动
+12:05:31.046 [event-drop] core: core:startup
+12:05:31.046 [module-start] echo: 事件 core:startup 匹配启动条件  [reason=core:startup]
+12:05:31.047 [event] external: echo  [转发=echo  data={"text":"世界"}]
+12:05:31.047 [event] echo: greet  [转发=greeter  data={"name":"世界"}]
+12:05:31.047 [module-log] greeter: 收到问候: 世界
+12:05:31.047 [event-drop] external: no:one-listens  [data={"note":"测试丢弃"}]
+12:05:31.047 [module-stop] greeter: 关闭模块，清理 1 个公共数组  [清理数组=greetings]
+12:05:31.047 [core-stop] core: 核心关闭
 ```
 
 ## 5. 测试：用真实软件驱动框架验证

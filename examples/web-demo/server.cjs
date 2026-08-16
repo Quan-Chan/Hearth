@@ -13,7 +13,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { startCore, groupLogEntries } = require('../../dist/index.js');
+const { startCore, formatLogEntry, categoryOf } = require('../../dist/index.js');
 
 const ROOT = __dirname;
 const MODULE_DIR = path.join(ROOT, 'modules');
@@ -69,7 +69,12 @@ async function main() {
           started: core.started,
           modules: core.listModules(),
           arrays,
-          logGroups: groupLogEntries(logs),
+          // 连续时间线：按发生顺序逐条输出（一行一条，需要分区时前端按 type 着色/过滤即可）
+          logs: logs.map((e) => ({
+            line: formatLogEntry(e),
+            type: String(e.type),
+            category: categoryOf(String(e.type)),
+          })),
           logCount: core.log.all().length,
         });
         return;

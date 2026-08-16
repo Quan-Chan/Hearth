@@ -7,7 +7,7 @@
  */
 const path = require('path');
 const fs = require('fs');
-const { startCore, groupLogEntries } = require('../../dist/index.js');
+const { startCore, formatLogEntry } = require('../../dist/index.js');
 
 async function main() {
   const moduleDir = path.join(__dirname, 'modules');
@@ -34,14 +34,11 @@ async function main() {
   console.log('\n=== 6. 关闭核心（模块停止，其数组自动消失） ===');
   await core.stop();
 
-  console.log('\n=== 事件流水日志（按类别分组） ===');
+  console.log('\n=== 事件流水日志（连续时间线：发生什么就记录什么） ===');
   const lines = fs.readFileSync(logFile, 'utf8').split(/\r?\n/).filter(Boolean);
   const entries = lines.map((l) => JSON.parse(l));
-  for (const group of groupLogEntries(entries)) {
-    console.log('\n── ' + group.title + ' ──');
-    for (const line of group.lines) {
-      console.log('  ' + line);
-    }
+  for (const e of entries) {
+    console.log(formatLogEntry(e));
   }
 }
 
