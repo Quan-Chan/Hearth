@@ -21,7 +21,7 @@ test('startCore：一次启动整机软件，模块按事件自动启动', async
     assert.equal(core.getModule('greeter')!.status, 'running');
     // 链式协作：echo 事件 -> greet 事件 -> greetings 数组
     await core.sendEvent('echo', { text: '世界' });
-    assert.deepEqual(core.pullArray('greetings'), ['你好, 世界!']);
+    assert.deepEqual(core.array('greetings'), ['你好, 世界!']);
     await core.stop();
     assert.equal(core.started, false);
   } finally {

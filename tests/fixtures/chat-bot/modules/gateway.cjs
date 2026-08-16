@@ -9,7 +9,7 @@ module.exports = {
     if (event.name === 'chat:receive') {
       const msg = event.data;
       ctx.editArray('chat:history', { type: 'push', value: { type: 'message', user: msg.user, text: msg.text, room: msg.room } });
-      const users = ctx.pullArray('chat:users');
+      const users = ctx.array('chat:users');
       if (!users.some((u) => u.name === msg.user)) {
         ctx.editArray('chat:users', { type: 'push', value: { name: msg.user, joinedAt: Date.now() } });
       }

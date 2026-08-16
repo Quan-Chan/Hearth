@@ -10,13 +10,13 @@
 | 需求 | 实现 |
 | --- | --- |
 | 事件是纯字符串消息信号 | `CoreEvent.name` 为字符串信号（如 `core:startup`），支持精确匹配与通配符（`*`、`?`）比对 |
-| 公共数组：公开、可拉取/编辑、不能改名 | `ArrayRegistry`：`exposeArray / unexposeArray / pullArray / editArray`，数组名一旦公开不可变，编辑只能改内容 |
+| 公共数组：公开、可拉取/编辑、不能改名 | **映射语义**：公开 = 把数组对象映射到名字（存引用）；`array()` 返回实时引用，像原生数组一样使用；一次修改处处有效；公开者消失（模块停止）数组自动消失；数组名不可变 |
 | 模块 = 可被加载的程序，靠 YAML 启动 | 模块 = YAML 配置 + 程序文件（`.cjs/.js/.mjs/.ts`），YAML 声明 `startEvents`（出现即启动）与 `listen`（出现即向其发送事件消息） |
 | 核心方法：启动/关闭模块、发送事件 | `startModule / stopModule / sendEvent` |
 | 核心自产事件 | `core:startup`（核心启动）、`core:shutdown`（核心关闭） |
 | 比对事件 | 每个事件到达时：①未运行的模块若 `startEvents` 匹配则启动；②运行中的模块若 `listen` 匹配则向其发送事件消息 |
 | 监听模块文件夹 | `ConfigWatcher` 轮询模块目录，YAML 新增→加载、变化→更新并重启模块、删除→停止并移除 |
-| 日志：原样记录所有事情（事件流水） | `EventStreamLog`，JSONL 落盘，记录事件、模块启停、数组操作、模块日志、错误 |
+| 日志：记录核心自己干的事情（事件流水） | `EventStreamLog` JSONL 落盘，三字段 `{type, source, message}`：类型（核心的动作）/ 来源 / 信息；只记事件收发、模块启停、配置加载、模块日志与错误，数组操作不记（防高频爆日志） |
 
 **模块间通信被严格限制**：只能通过「事件信号 + 公共数组数据」协作，不能互相直接调用 —— 模块间的 DAG 由事件涌现产生，核心因此保持极小。
 
@@ -85,8 +85,9 @@ module.exports = {
 | `onEvent(ctx, event)`（由核心调用） | 接收事件信息 |
 | `ctx.exposeArray(name, initial?)` | 公开数组（同拥有者重新公开 = 重置内容） |
 | `ctx.unexposeArray(name)` | 取消公开数组（仅拥有者） |
-| `ctx.pullArray(name)` | 拉取特定数组（深拷贝快照） |
-| `ctx.editArray(name, op)` | 编辑特定数组内容（不能改名） |
+| `ctx.array(name)` | 拉取特定数组：返回被映射对象引用（O(1)），原生数组语法，一次修改处处有效 |
+| `ctx.snapshotArray(name)` | 显式深拷贝快照（需要数据隔离时用） |
+| `ctx.editArray(name, op)` | 编辑特定数组内容（受控操作，改同一对象；不能改名） |
 | `ctx.sendEvent(name, data?)` | 产生事件消息 |
 | `ctx.log(...)` / `ctx.config` | 模块日志 / YAML 配置 |
 
@@ -94,13 +95,30 @@ module.exports = {
 
 ## 4. 事件流水日志
 
-所有发生的事情原样记录为 JSONL（`logs/event-stream.log`），例如核心刚打开时：
+日志只记录**核心框架自己干的事情**，每条三字段主结构：
 
-```json
-{"t":"2026-08-16T11:05:27.561Z","type":"core:start"}
-{"t":"2026-08-16T11:05:27.570Z","type":"event","event":"core:startup","source":"core"}
-{"t":"2026-08-16T11:05:27.571Z","type":"module:start","module":"greeter","reason":"core:startup"}
-{"t":"2026-08-16T11:05:27.571Z","type":"array:expose","array":"greetings","owner":"greeter"}
+| 字段 | 含义 | 示例 |
+| --- | --- | --- |
+| `type` | ① 日志类型：核心的动作（kebab-case 统一命名） | `event` / `event-drop` / `module-start` |
+| `source` | ② 日志来源：动作涉及的对象 | `core` / `external` / 模块名 |
+| `message` | ③ 日志信息：人类可读的具体内容 | `echo` / `事件 core:startup 匹配启动条件` |
+
+**日志类型全集**：`core-start` `core-stop`（核心启停）、`event`（收到并转发）、`event-drop`（收到但无模块匹配，丢弃）、`module-start` `module-stop` `module-skip`（模块启停）、`config-load` `config-update` `config-remove`（配置热加载）、`module-log`（模块显式请求的日志）、`error`。
+
+> 数组操作（公开/编辑/读取）**不记录日志**——数组是模块间的数据通道，可能是高频流式操作，逐条记录会撑爆日志。
+
+落盘为 JSONL（`logs/event-stream.log`），控制台/演示按类别分组展示：
+
+```
+── 事件处理 ──
+  12:05:31.046 [event-drop] core: core:startup
+  12:05:31.047 [event] external: echo  [转发=echo  data={"text":"世界"}]
+  12:05:31.047 [event] echo: greet  [转发=greeter  data={"name":"世界"}]
+  12:05:31.047 [event-drop] external: no:one-listens  [data={"note":"测试丢弃"}]
+
+── 模块生命周期 ──
+  12:05:31.046 [module-start] greeter: 事件 core:startup 匹配启动条件  [reason=core:startup]
+  12:05:31.047 [module-stop] greeter: 关闭模块，清理 1 个公共数组  [清理数组=greetings]
 ```
 
 ## 5. 测试：用真实软件驱动框架验证

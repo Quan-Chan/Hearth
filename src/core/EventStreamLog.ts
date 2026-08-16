@@ -1,15 +1,21 @@
 /**
- * 事件流水日志：原样记录所有发生的事情。
- * 每条记录一行 JSON（JSONL 格式），可落盘、可内存读取，写入顺序有保证。
- * 示例：核心刚打开时记录 "core:startup" 事件，以及哪些模块因此启动。
+ * 事件流水日志：原样记录"核心框架干的事情"（JSONL 落盘 + 内存读取，顺序保证）。
+ * 每条记录三字段主结构：{ type, source, message }（详见 logFormat.ts）。
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { categoryOf, formatLogEntry } from './logFormat';
+import type { LogCategory } from './logFormat';
 
 export interface LogEntry {
-  /** ISO 时间戳（由 record 自动填充） */
+  /** ISO 时间戳（record 自动填充） */
   t?: string;
+  /** ① 日志类型：核心的动作（event / module-start / ...） */
   type: string;
+  /** ② 日志来源：动作涉及的对象（core / external / 模块名） */
+  source: string;
+  /** ③ 日志信息：人类可读的具体内容 */
+  message: string;
   [key: string]: unknown;
 }
 
@@ -30,8 +36,9 @@ export class EventStreamLog {
     this.entries.push(full);
     this.ensureStream();
     if (this.consoleOut) {
+      // 控制台输出人类可读格式（文件保持 JSONL 原样）
       // eslint-disable-next-line no-console
-      console.log(JSON.stringify(full));
+      console.log(formatLogEntry(full));
     }
     if (this.stream) {
       this.stream.write(JSON.stringify(full) + '\n');
@@ -48,7 +55,7 @@ export class EventStreamLog {
     });
   }
 
-  /** 所有内存中的条目（含未落盘部分）。 */
+  /** 所有内存中的条目。 */
   all(): LogEntry[] {
     return this.entries;
   }
@@ -56,6 +63,11 @@ export class EventStreamLog {
   /** 按类型过滤。 */
   byType(type: string): LogEntry[] {
     return this.entries.filter((e) => e.type === type);
+  }
+
+  /** 按类别过滤（core/event/module/config/log/error）。 */
+  byCategory(category: LogCategory): LogEntry[] {
+    return this.entries.filter((e) => categoryOf(String(e.type)) === category);
   }
 
   /** 读取已落盘文件的所有行（测试用）。 */

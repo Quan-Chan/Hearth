@@ -87,12 +87,12 @@ test('启动核心 == 启动整个软件：core:startup 自动启动匹配模块
     assert.equal(core.getModule('boom')!.status, 'failed');
     assert.equal(core.getModule('lazy')!.status, 'stopped'); // 启动事件未出现
     // 启动时暴露的数组可用
-    assert.deepEqual(core.pullArray('boot:marks'), ['started']);
-    // 事件流水：核心启动事件原样记录，且记录了哪些模块因此启动
-    const events = core.log.byType('event');
-    assert.equal(events[0].event, 'core:startup');
-    assert.equal(events[0].source, 'core');
-    const starts = core.log.byType('module:start');
+    assert.deepEqual(core.array('boot:marks'), ['started']);
+    // 事件流水：核心启动事件原样记录（无模块监听 -> 记录为 event-drop，符合新语义）
+    const drops = core.log.byType('event-drop');
+    assert.equal(drops[0].event, 'core:startup');
+    assert.equal(drops[0].source, 'core');
+    const starts = core.log.byType('module-start');
     assert.ok(starts.every((s) => s.reason === 'core:startup'));
     await core.stop();
   } finally {
@@ -107,17 +107,17 @@ test('事件路由：精确匹配 + 通配符匹配，非监听者不收', async
     const core = makeCore(dir);
     await core.start();
     await core.sendEvent('chat:message', { text: 'hi' }, 'tester');
-    assert.deepEqual(core.pullArray('boot:marks'), ['started', 'chat:message']);
+    assert.deepEqual(core.array('boot:marks'), ['started', 'chat:message']);
     // badhandler 也监听 chat:message：它抛错，但日志记录且不影响其他模块
-    assert.equal(core.log.byType('module:event-failed').length, 1);
+    assert.equal(core.log.byType('error').filter((e) => String(e.message).includes('处理事件')).length, 1);
     // wild 通配符收不到 chat:message
-    assert.deepEqual(core.pullArray('wild:marks'), []);
+    assert.deepEqual(core.array('wild:marks'), []);
     await core.sendEvent('wild:ping');
-    assert.deepEqual(core.pullArray('wild:marks'), ['wild:ping']);
+    assert.deepEqual(core.array('wild:marks'), ['wild:ping']);
     // lazy 未启动，收不到事件
     await core.sendEvent('lazy:go', { v: 1 }, 'tester');
     assert.equal(core.getModule('lazy')!.status, 'running'); // 事件触发启动
-    assert.deepEqual(core.pullArray('lazy:marks'), ['lazy-started', 'lazy:go']); // 启动后也收到了事件
+    assert.deepEqual(core.array('lazy:marks'), ['lazy-started', 'lazy:go']); // 启动后也收到了事件
     await core.stop();
   } finally {
     rmDir(dir);
@@ -133,7 +133,7 @@ test('框架核心方法：startModule / stopModule / sendEvent', async () => {
     // 手动停止与启动
     await core.stopModule('boot');
     assert.equal(core.getModule('boot')!.status, 'stopped');
-    assert.ok(core.log.byType('module:stop').some((s) => s.module === 'boot'));
+    assert.ok(core.log.byType('module-stop').some((s) => s.module === 'boot'));
     await core.startModule('boot', 'manual');
     assert.equal(core.getModule('boot')!.status, 'running');
     // 未知模块抛错
@@ -141,9 +141,9 @@ test('框架核心方法：startModule / stopModule / sendEvent', async () => {
     await assert.rejects(() => core.stopModule('ghost'), /未知模块/);
     // 重复启动/停止不报错，仅记录跳过
     await core.startModule('boot');
-    assert.equal(core.log.byType('module:start-skipped').length, 1);
+    assert.equal(core.log.byType('module-skip').filter((s) => s.reason === 'already-running').length, 1);
     await core.stopModule('lazy'); // 未运行
-    assert.equal(core.log.byType('module:stop-skipped').length, 1);
+    assert.equal(core.log.byType('module-skip').filter((s) => s.reason === 'not-running').length, 1);
     // sendEvent 事件名校验
     await assert.rejects(() => core.sendEvent(''), /非空字符串/);
     await core.stop();
@@ -160,14 +160,14 @@ test('模块失败隔离：启动失败/事件处理失败不影响核心与其�
     await core.start();
     assert.equal(core.getModule('boom')!.status, 'failed');
     assert.ok(core.getModule('boom')!.error!.includes('启动失败'));
-    assert.equal(core.log.byType('module:start-failed').length, 1);
+    assert.equal(core.log.byType('error').filter((e) => String(e.message).includes('启动失败')).length, 1);
     // 核心仍然工作
     await core.sendEvent('wild:ok');
-    assert.deepEqual(core.pullArray('wild:marks'), ['wild:ok']);
+    assert.deepEqual(core.array('wild:marks'), ['wild:ok']);
     // badhandler 抛错被记录，boot 仍收到事件
     await core.sendEvent('chat:message', { text: 'x' });
-    assert.equal(core.log.byType('module:event-failed').length, 1);
-    assert.deepEqual(core.pullArray('boot:marks'), ['started', 'chat:message']);
+    assert.equal(core.log.byType('error').filter((e) => String(e.message).includes('处理事件')).length, 1);
+    assert.deepEqual(core.array('boot:marks'), ['started', 'chat:message']);
     await core.stop();
   } finally {
     rmDir(dir);
@@ -181,20 +181,41 @@ test('关闭：core:shutdown 先广播，模块逆序停止，之后不能再发
     const core = makeCore(dir);
     await core.start();
     // 启动顺序：badhandler, boot, boom, lazy, wild（文件名字母序）
-    const startOrder = core.log.byType('module:start').map((s) => s.module);
+    const startOrder = core.log.byType('module-start').map((s) => s.module);
     await core.stop();
-    // core:shutdown 事件在 module:stop 之前
-    const shutdownIdx = core.log.byType('event').findIndex((e) => e.event === 'core:shutdown');
-    const stopEntries = core.log.byType('module:stop');
+    // core:shutdown 事件在 module-stop 之前（无模块监听 -> event-drop）
+    const shutdownIdx = core.log.byType('event-drop').findIndex((e) => e.event === 'core:shutdown');
+    const stopEntries = core.log.byType('module-stop');
     assert.ok(shutdownIdx >= 0);
     assert.ok(stopEntries.length >= 2);
     const stopOrder = stopEntries.map((s) => s.module);
     // 逆序停止
     assert.deepEqual(stopOrder, [...startOrder].reverse());
-    assert.equal(core.log.byType('core:stop').length, 1);
+    assert.equal(core.log.byType('core-stop').length, 1);
     assert.equal(core.started, false);
     // 停止后不能发送事件
     await assert.rejects(() => core.sendEvent('x'), /未启动/);
+  } finally {
+    rmDir(dir);
+  }
+});
+
+test('事件丢弃：无人监听的事件记录 event-drop', async () => {
+  const dir = mkTmpDir('life');
+  try {
+    makeFixtures(dir);
+    const core = makeCore(dir);
+    await core.start();
+    // nobody:listens 没有任何模块监听（也没有模块以此为启动事件）
+    await core.sendEvent('nobody:listens', { x: 1 }, 'tester');
+    const drops = core.log.byType('event-drop').filter((e) => e.event === 'nobody:listens');
+    assert.equal(drops.length, 1);
+    assert.equal(drops[0].source, 'tester');
+    assert.equal(drops[0].message, 'nobody:listens');
+    // 有监听的正常事件不产生 event-drop（core:startup 是无监听的，属预期）
+    await core.sendEvent('wild:ok');
+    assert.equal(core.log.byType('event-drop').filter((e) => e.event === 'nobody:listens').length, 1);
+    await core.stop();
   } finally {
     rmDir(dir);
   }

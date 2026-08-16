@@ -7,7 +7,7 @@ module.exports = {
   onEvent(ctx, event) {
     if (event.name !== 'app:metric') return;
     const m = event.data;
-    const latest = ctx.pullArray('metrics:latest');
+    const latest = ctx.array('metrics:latest');
     const idx = latest.findIndex((x) => x.name === m.name);
     if (idx >= 0) {
       // 同名指标：更新（set 覆盖）

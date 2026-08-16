@@ -1,47 +1,38 @@
 /**
- * 公共数组注册表。
- * 规则（对应 REQUIREMENTS.md）：
- *  - 模块选择公开自己的数组（expose），其他人可以拉取（pull）与编辑内容（edit）。
- *  - 数组名一旦公开不可改变（没有改名操作）；编辑只作用于内部内容。
- *  - 取消公开（unexpose）仅限数组拥有者（模块）自己。
+ * 公共数组注册表（映射语义）。
+ *
+ * 公开数组 = 把模块的数组对象"映射"到一个名字上（存引用，不拷贝）。
+ * 其他模块 array(name) 拿到的是同一个被映射对象 -> 原生数组语法、O(1)、一次修改处处有效。
+ * 公开者消失（模块停止）-> removeOwner 取消映射 -> 数组自然消失，不留残档。
+ * 数组名一旦公开不可改变（没有改名操作）。
  */
 import type { ArrayOp } from '../types';
 
 export interface PublicArray {
   name: string;
   owner: string;
+  /** 被映射的数组对象（注册表持有引用，所有模块共享同一对象） */
   items: unknown[];
 }
 
 export class ArrayRegistry {
   private map = new Map<string, PublicArray>();
 
-  /** 公开数组；重名会抛错。initial 必须是数组。 */
-  expose(name: string, owner: string, initial: unknown[] = []): void {
+  /** 公开：把数组对象映射到名字（存引用，不拷贝）。 */
+  expose(name: string, owner: string, items: unknown[] = []): void {
     if (typeof name !== 'string' || name.length === 0) {
       throw new Error('公共数组名必须是非空字符串');
     }
-    if (!Array.isArray(initial)) {
-      throw new Error(`公开数组 ${name} 的初始内容必须是数组`);
+    if (!Array.isArray(items)) {
+      throw new Error(`公开数组 ${name} 的内容必须是数组`);
     }
     if (this.map.has(name)) {
       throw new Error(`公共数组已存在: ${name}（拥有者 ${this.map.get(name)!.owner}）`);
     }
-    this.map.set(name, { name, owner, items: initial });
+    this.map.set(name, { name, owner, items });
   }
 
-  /** 同拥有者重新公开：重置内容（数组名保持不变）。模块重启场景。 */
-  reset(name: string, owner: string, items: unknown[]): void {
-    const arr = this.map.get(name);
-    if (!arr) throw new Error(`公共数组不存在: ${name}`);
-    if (arr.owner !== owner) {
-      throw new Error(`公共数组 ${name} 的拥有者是 ${arr.owner}，${owner} 无权重置`);
-    }
-    arr.items.length = 0;
-    arr.items.push(...items);
-  }
-
-  /** 取消公开（仅拥有者可执行）。 */
+  /** 取消映射（仅拥有者可执行）。 */
   unexpose(name: string, owner: string): void {
     const arr = this.map.get(name);
     if (!arr) throw new Error(`公共数组不存在: ${name}`);
@@ -49,6 +40,35 @@ export class ArrayRegistry {
       throw new Error(`公共数组 ${name} 的拥有者是 ${arr.owner}，${owner} 无权取消公开`);
     }
     this.map.delete(name);
+  }
+
+  /** 获取被映射的数组对象（O(1) 返回引用，直接原生使用）。 */
+  get<T = any>(name: string): T[] {
+    const arr = this.map.get(name);
+    if (!arr) throw new Error(`公共数组不存在: ${name}`);
+    return arr.items as T[];
+  }
+
+  /** 显式深拷贝快照（需要数据隔离的场合才用）。 */
+  snapshot<T = any>(name: string): T[] {
+    return structuredClone(this.get(name)) as T[];
+  }
+
+  /** 编辑内容（受控操作；内部直接改被映射对象）。数组名不可改变。 */
+  edit(name: string, op: ArrayOp): void {
+    applyOp(this.get(name), op);
+  }
+
+  /** 删除某拥有者的全部映射（模块停止时调用）-> 数组从注册表消失。返回被删的数组名。 */
+  removeOwner(owner: string): string[] {
+    const removed: string[] = [];
+    for (const [name, arr] of [...this.map]) {
+      if (arr.owner === owner) {
+        this.map.delete(name);
+        removed.push(name);
+      }
+    }
+    return removed;
   }
 
   has(name: string): boolean {
@@ -61,20 +81,6 @@ export class ArrayRegistry {
 
   list(): string[] {
     return [...this.map.keys()];
-  }
-
-  /** 拉取：返回深拷贝快照，调用方修改快照不影响注册表内容。 */
-  pull<T = any>(name: string): T[] {
-    const arr = this.map.get(name);
-    if (!arr) throw new Error(`公共数组不存在: ${name}`);
-    return structuredClone(arr.items) as T[];
-  }
-
-  /** 编辑内容（结构化操作）。数组名不可改变。 */
-  edit(name: string, op: ArrayOp): void {
-    const arr = this.map.get(name);
-    if (!arr) throw new Error(`公共数组不存在: ${name}`);
-    applyOp(arr.items, op);
   }
 }
 

@@ -23,7 +23,7 @@ module.exports = {
         clearTimeout(timer);
         timers.delete(event.data.id);
       }
-      const queue = ctx.pullArray('tasks:queue');
+      const queue = ctx.array('tasks:queue');
       const idx = queue.findIndex((x) => x.id === event.data.id);
       if (idx >= 0) ctx.editArray('tasks:queue', { type: 'removeAt', index: idx });
     }

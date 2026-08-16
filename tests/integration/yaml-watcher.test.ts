@@ -29,10 +29,10 @@ test('监听模块文件夹：新增 YAML 自动加载，匹配已发生事件�
     fs.writeFileSync(path.join(dir, 'greeter.yaml'), yamlFor('greeter', { startEvents: ['core:startup'], listen: ['greet'] }));
     // core:startup 已经发生过 -> 模块自动启动
     await waitFor(() => core.getModule('greeter')?.status === 'running');
-    assert.ok(core.log.byType('config:load').some((l) => l.module === 'greeter'));
+    assert.ok(core.log.byType('config-load').some((l) => l.module === 'greeter'));
     // 事件可以正常送达
     await core.sendEvent('greet', { name: 'world' });
-    assert.deepEqual(core.pullArray('greet:out'), ['greet']);
+    assert.deepEqual(core.array('greet:out'), ['greet']);
     await core.stop();
   } finally {
     rmDir(dir);
@@ -52,7 +52,7 @@ test('新增模块：启动事件未发生过则不启动，事件到来时启�
     // 事件出现 -> 启动
     await core.sendEvent('later:event');
     await waitFor(() => core.getModule('late')!.status === 'running');
-    assert.deepEqual(core.pullArray('late:marks'), ['late-started', 'later:event']);
+    assert.deepEqual(core.array('late:marks'), ['late-started', 'later:event']);
     await core.stop();
   } finally {
     rmDir(dir);
@@ -70,18 +70,18 @@ test('YAML 变化：更新配置并重启模块，新监听生效', async () => 
     await waitFor(() => core.getModule('greeter')?.status === 'running');
     // 修改 YAML：listen 改为另一事件
     fs.writeFileSync(yamlPath, yamlFor('greeter', { startEvents: ['core:startup'], listen: ['greet:new'] }));
-    await waitFor(() => core.log.byType('config:update').some((l) => l.module === 'greeter'));
+    await waitFor(() => core.log.byType('config-update').some((l) => l.module === 'greeter'));
     // 重启：先停后启
     await waitFor(() => {
-      const stops = core.log.byType('module:stop').filter((s) => s.module === 'greeter').length;
-      const starts = core.log.byType('module:start').filter((s) => s.module === 'greeter').length;
+      const stops = core.log.byType('module-stop').filter((s) => s.module === 'greeter').length;
+      const starts = core.log.byType('module-start').filter((s) => s.module === 'greeter').length;
       return stops >= 1 && starts >= 2;
     });
     // 新监听生效，旧监听失效
     await core.sendEvent('greet');
-    assert.deepEqual(core.pullArray('greet:out'), []);
+    assert.deepEqual(core.array('greet:out'), []);
     await core.sendEvent('greet:new');
-    assert.deepEqual(core.pullArray('greet:out'), ['greet:new']);
+    assert.deepEqual(core.array('greet:out'), ['greet:new']);
     await core.stop();
   } finally {
     rmDir(dir);
@@ -98,8 +98,8 @@ test('删除 YAML：模块被停止并移除', async () => {
     await waitFor(() => core.getModule('greeter')?.status === 'running');
     fs.rmSync(path.join(dir, 'greeter.yaml'));
     await waitFor(() => core.getModule('greeter') === undefined);
-    assert.ok(core.log.byType('module:stop').some((s) => s.module === 'greeter'));
-    assert.ok(core.log.byType('config:remove').some((l) => l.module === 'greeter'));
+    assert.ok(core.log.byType('module-stop').some((s) => s.module === 'greeter'));
+    assert.ok(core.log.byType('config-remove').some((l) => l.module === 'greeter'));
     await core.stop();
   } finally {
     rmDir(dir);
@@ -112,7 +112,7 @@ test('非法 YAML：记录 config:error，核心继续运行', async () => {
     const core = new ConnectCore({ moduleDir: dir, watch: true, pollIntervalMs: 50 });
     await core.start();
     fs.writeFileSync(path.join(dir, 'bad.yaml'), 'name: [unclosed\n');
-    await waitFor(() => core.log.byType('config:error').length >= 1);
+    await waitFor(() => core.log.byType('error').filter((e) => String(e.message).includes('配置解析失败')).length >= 1);
     assert.equal(core.listModules().length, 0);
     // 核心仍然可发事件
     await core.sendEvent('anything:go');

@@ -18,15 +18,15 @@ test('智能家居：人体感应联动灯光，多个模块同时监听同一�
     await core.start();
     // 有人进入客厅 -> 灯亮 + 传感器更新
     await core.sendEvent('home:motion', { room: 'living', motion: true });
-    assert.deepEqual(core.pullArray('home:lights'), [{ room: 'living', on: true }]);
-    assert.deepEqual(core.pullArray('home:sensors'), [{ room: 'living', motion: true }]);
+    assert.deepEqual(core.array('home:lights'), [{ room: 'living', on: true }]);
+    assert.deepEqual(core.array('home:sensors'), [{ room: 'living', motion: true }]);
     // 无人 -> 灯灭
     await core.sendEvent('home:motion', { room: 'living', motion: false });
-    assert.deepEqual(core.pullArray('home:lights'), [{ room: 'living', on: false }]);
+    assert.deepEqual(core.array('home:lights'), [{ room: 'living', on: false }]);
     // 新房间自动加入
     await core.sendEvent('home:motion', { room: 'kitchen', motion: true });
     assert.deepEqual(
-      core.pullArray('home:lights').map((l) => l.room).sort(),
+      core.array('home:lights').map((l) => l.room).sort(),
       ['kitchen', 'living'],
     );
     await core.stop();
@@ -42,11 +42,11 @@ test('智能家居：温度超阈值自动制冷，链式事件 + 模块日志',
     await core.start();
     // 30 度 > 26 -> 制冷
     await core.sendEvent('home:temperature', { room: 'living', temp: 30 });
-    assert.deepEqual(core.pullArray('home:devices'), [{ room: 'living', cooling: true }]);
-    assert.ok(core.log.byType('module:log').some((l) => l.module === 'cooler' && String(l.message).includes('制冷')));
+    assert.deepEqual(core.array('home:devices'), [{ room: 'living', cooling: true }]);
+    assert.ok(core.log.byType('module-log').some((l) => l.module === 'cooler' && String(l.message).includes('制冷')));
     // 22 度 -> 不制冷
     await core.sendEvent('home:temperature', { room: 'living', temp: 22 });
-    assert.equal(core.pullArray('home:devices')[0].cooling, true); // 保持开启（不自动关）
+    assert.equal(core.array('home:devices')[0].cooling, true); // 保持开启（不自动关）
     await core.stop();
   } finally {
     rmDir(tmp);
@@ -60,7 +60,7 @@ test('智能家居：安全日志用通配符原样记录所有 home:* 事件', 
     await core.start();
     await core.sendEvent('home:motion', { room: 'living', motion: true });
     await core.sendEvent('home:temperature', { room: 'living', temp: 30 });
-    const log = core.pullArray('home:log');
+    const log = core.array('home:log');
     assert.deepEqual(log.map((l) => l.event), ['home:motion', 'home:temperature', 'home:cooling']);
     assert.equal(log[2].data.room, 'living');
     await core.stop();

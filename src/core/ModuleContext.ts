@@ -2,10 +2,10 @@
  * 模块上下文：框架核心提供给模块的 API 面。
  * 对应 REQUIREMENTS.md 第 3 节"模块内方法"：
  *   1. 接收事件信息（onEvent 由核心调用）
- *   2. 公开数组        -> exposeArray
+ *   2. 公开数组        -> exposeArray（把模块自己的数组对象映射到名字）
  *   3. 取消公开数组    -> unexposeArray
- *   4. 拉取特定数组    -> pullArray
- *   5. 编辑特定数组    -> editArray
+ *   4. 拉取特定数组    -> array（返回被映射对象引用，原生数组语法，一次修改处处有效）
+ *   5. 编辑特定数组    -> editArray（受控操作，改的是同一对象）
  */
 import type { ConnectCore } from './ConnectCore';
 import type { ArrayOp, ModuleConfig } from '../types';
@@ -28,9 +28,9 @@ export class ModuleContext {
     return this.core.sendEvent(name, data, this.moduleName);
   }
 
-  /** 公开数组（模块选择公开的数组，其他人可拉取/编辑内容，但不能改名）。 */
-  exposeArray(name: string, initial: unknown[] = []): void {
-    this.core.exposeArray(name, this.moduleName, initial);
+  /** 公开数组：把模块自己的数组对象映射到名字（存引用，不拷贝）。 */
+  exposeArray(name: string, items: unknown[] = []): void {
+    this.core.exposeArray(name, this.moduleName, items);
   }
 
   /** 取消公开数组（仅限自己公开的）。 */
@@ -38,17 +38,22 @@ export class ModuleContext {
     this.core.unexposeArray(name, this.moduleName);
   }
 
-  /** 拉取特定数组（深拷贝快照）。 */
-  pullArray<T = any>(name: string): T[] {
-    return this.core.pullArray<T>(name);
+  /** 拉取特定数组：返回被映射的对象引用，像原生数组一样直接使用。 */
+  array<T = any>(name: string): T[] {
+    return this.core.array<T>(name);
   }
 
-  /** 编辑特定数组的内容（结构化操作；数组名不可改变）。 */
+  /** 显式深拷贝快照（需要数据隔离时用）。 */
+  snapshotArray<T = any>(name: string): T[] {
+    return this.core.snapshotArray<T>(name);
+  }
+
+  /** 编辑特定数组的内容（受控操作；数组名不可改变）。 */
   editArray(name: string, op: ArrayOp): void {
     this.core.editArray(name, op);
   }
 
-  /** 模块自有日志（写入事件流水，type=module:log）。 */
+  /** 模块自有日志（显式请求核心记录，写入事件流水，type=module-log）。 */
   log(...parts: unknown[]): void {
     this.core.logModule(this.moduleName, ...parts);
   }

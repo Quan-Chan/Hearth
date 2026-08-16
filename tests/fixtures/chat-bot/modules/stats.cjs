@@ -5,7 +5,7 @@ module.exports = {
     ctx.exposeArray('chat:stats', [{ key: 'events', count: 0 }]);
   },
   onEvent(ctx) {
-    const stats = ctx.pullArray('chat:stats');
+    const stats = ctx.array('chat:stats');
     const idx = stats.findIndex((s) => s.key === 'events');
     ctx.editArray('chat:stats', { type: 'set', index: idx, value: { key: 'events', count: stats[idx].count + 1 } });
   },

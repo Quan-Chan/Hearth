@@ -22,17 +22,17 @@ test('监控告警：指标聚合去重 + 阈值告警 + 历史归档', async ()
     // 低值：只聚合，不告警
     await core.sendEvent('app:metric', { name: 'cpu', value: 30 });
     await core.sendEvent('app:metric', { name: 'mem', value: 80 });
-    assert.equal(core.pullArray('metrics:latest').length, 2);
-    assert.equal(core.pullArray('alerts:active').length, 0);
-    assert.equal(core.pullArray('alerts:history').length, 0);
+    assert.equal(core.array('metrics:latest').length, 2);
+    assert.equal(core.array('alerts:active').length, 0);
+    assert.equal(core.array('alerts:history').length, 0);
     // 高值：告警
     await core.sendEvent('app:metric', { name: 'cpu', value: 150 });
-    assert.equal(core.pullArray('alerts:active').length, 1);
-    assert.equal(core.pullArray('alerts:active')[0].value, 150);
-    assert.equal(core.pullArray('alerts:history').length, 1);
+    assert.equal(core.array('alerts:active').length, 1);
+    assert.equal(core.array('alerts:active')[0].value, 150);
+    assert.equal(core.array('alerts:history').length, 1);
     // 再次上报同名指标 -> 覆盖旧值（去重）
     await core.sendEvent('app:metric', { name: 'cpu', value: 42 });
-    const latest = core.pullArray('metrics:latest');
+    const latest = core.array('metrics:latest');
     assert.equal(latest.length, 2);
     const cpu = latest.find((m) => m.name === 'cpu');
     assert.equal(cpu.value, 42);

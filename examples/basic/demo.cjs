@@ -3,10 +3,11 @@
  * 运行：node examples/basic/demo.cjs  （或 npm run demo）
  *
  * 事件链：echo 事件 -> greeter 收到并转为 greet 事件 -> 写入 greetings 公共数组
+ * 日志：只记录核心自己干的事情（三字段：type/source/message），按类别分组展示。
  */
 const path = require('path');
 const fs = require('fs');
-const { startCore } = require('../../dist/index.js');
+const { startCore, groupLogEntries } = require('../../dist/index.js');
 
 async function main() {
   const moduleDir = path.join(__dirname, 'modules');
@@ -24,25 +25,23 @@ async function main() {
   console.log('\n=== 3. 发送事件：greet（直接问候） ===');
   await core.sendEvent('greet', { name: 'Node.js' });
 
-  console.log('\n=== 4. 查看公共数组 greetings ===');
-  console.log(core.pullArray('greetings'));
+  console.log('\n=== 4. 发送一个无人监听的事件（应记录 event-drop） ===');
+  await core.sendEvent('no:one-listens', { note: '测试丢弃' });
 
-  console.log('\n=== 5. 关闭核心 ===');
+  console.log('\n=== 5. 查看公共数组 greetings（实时引用，原生数组） ===');
+  console.log(core.array('greetings'));
+
+  console.log('\n=== 6. 关闭核心（模块停止，其数组自动消失） ===');
   await core.stop();
 
-  console.log('\n=== 事件流水日志（logs/event-stream.log） ===');
+  console.log('\n=== 事件流水日志（按类别分组） ===');
   const lines = fs.readFileSync(logFile, 'utf8').split(/\r?\n/).filter(Boolean);
-  for (const line of lines) {
-    const e = JSON.parse(line);
-    const t = e.t.slice(11, 23);
-    let msg = t + '  [' + e.type + ']';
-    if (e.event) msg += ' ' + e.event + (e.source ? '  (source=' + e.source + ')' : '');
-    if (e.module) msg += '  module=' + e.module;
-    if (e.reason) msg += '  reason=' + e.reason;
-    if (e.message) msg += '  message=' + e.message;
-    if (e.array) msg += '  array=' + e.array + '  owner=' + (e.owner || '');
-    if (e.data !== undefined) msg += '  data=' + JSON.stringify(e.data);
-    console.log(msg);
+  const entries = lines.map((l) => JSON.parse(l));
+  for (const group of groupLogEntries(entries)) {
+    console.log('\n── ' + group.title + ' ──');
+    for (const line of group.lines) {
+      console.log('  ' + line);
+    }
   }
 }
 

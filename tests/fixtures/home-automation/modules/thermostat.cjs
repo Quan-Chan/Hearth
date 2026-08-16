@@ -10,7 +10,7 @@ module.exports = {
       if (t.temp > 26) ctx.sendEvent('home:cooling', { room: t.room });
     } else if (event.name === 'home:cooling') {
       const c = event.data;
-      const devices = ctx.pullArray('home:devices');
+      const devices = ctx.array('home:devices');
       const idx = devices.findIndex((d) => d.room === c.room);
       if (idx >= 0) ctx.editArray('home:devices', { type: 'set', index: idx, value: { room: c.room, cooling: true } });
       else ctx.editArray('home:devices', { type: 'push', value: { room: c.room, cooling: true } });

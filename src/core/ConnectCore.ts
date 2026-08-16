@@ -4,14 +4,13 @@
  * 职责（对应 REQUIREMENTS.md）：
  *  框架核心方法：
  *   1. 启动模块      -> startModule
- *   2. 关闭模块      -> stopModule
- *   3. 发送事件消息  -> sendEvent
+ *   2. 关闭模块      -> stopModule（关闭时其公开数组自动取消映射、自然消失）
+ *   3. 发送事件消息  -> sendEvent（比对事件：启动匹配模块 + 向监听模块转发）
  *  框架其余功能：
  *   - 自产事件：核心启动/关闭时产生 "core:startup" / "core:shutdown"
- *   - 比对事件：按 startEvents 决定是否启动模块，按 listen 决定是否发送事件消息
  *   - 监听模块文件夹：ConfigWatcher 热加载 YAML（新增/修改/删除）
- *   - 日志：EventStreamLog 原样记录所有发生的事情（事件流水）
- *   - 公共数组：ArrayRegistry 管理模块公开的数组
+ *   - 日志：只记录核心自己干的事情（三字段：type/source/message，见 logFormat.ts）
+ *   - 公共数组：映射语义，公开者把数组对象映射到名字，所有人共享同一对象
  *
  * 启动核心 == 启动整个软件：core.start() 会扫描模块配置并发出 core:startup，
  * 所有依赖该事件的模块自动启动，无需单独启动任何模块。
@@ -22,6 +21,8 @@ import { ArrayRegistry } from './ArrayRegistry';
 import { ConfigWatcher } from './ConfigWatcher';
 import { ModuleContext } from './ModuleContext';
 import { anyEventMatches } from './EventMatcher';
+import { LOG_TYPES } from './logFormat';
+import type { LogType } from './logFormat';
 import { loadModuleProgram } from '../module/loadModule';
 import type {
   ArrayOp,
@@ -43,8 +44,16 @@ interface ModuleSlot {
   error?: string;
 }
 
+/** 模块启动原因 -> 人类可读描述。 */
+function describeStartReason(reason?: string): string {
+  if (!reason || reason === 'manual') return '手动启动';
+  if (reason === 'config-load') return '配置加载，启动事件已发生';
+  if (reason === 'config-update') return '配置更新，重新启动';
+  return `事件 ${reason} 匹配启动条件`;
+}
+
 export class ConnectCore {
-  /** 事件流水日志（原样记录所有发生的事情）。 */
+  /** 事件流水日志（只记录核心自己干的事情）。 */
   readonly log: EventStreamLog;
   /** 核心选项（已解析为绝对路径）。 */
   readonly options: Required<ConnectCoreOptions>;
@@ -74,12 +83,17 @@ export class ConnectCore {
     return this.startedFlag;
   }
 
+  /** 统一日志出口：只记录核心自己干的事情（三字段：type/source/message + 附加字段）。 */
+  private writeLog(type: LogType, source: string, message: string, extra: Record<string, unknown> = {}): void {
+    this.log.record({ type, source, message, ...extra });
+  }
+
   // ==================== 生命周期：启动核心 == 启动整个软件 ====================
 
   async start(): Promise<void> {
     if (this.startedFlag) throw new Error('Connect-Core 已经启动，请勿重复启动');
     this.startedFlag = true;
-    this.log.record({ type: 'core:start' });
+    this.writeLog(LOG_TYPES.CORE_START, 'core', '核心启动');
 
     this.watcher = new ConfigWatcher({
       dir: this.options.moduleDir,
@@ -90,7 +104,10 @@ export class ConnectCore {
         onUpdate: (cfg, yamlPath) => this.handleConfigUpdate(cfg, yamlPath),
         onRemove: (name) => this.handleConfigRemove(name),
         onError: (name, message) =>
-          this.log.record({ type: 'config:error', module: name, error: message }),
+          this.writeLog(LOG_TYPES.ERROR, name, `配置解析失败: ${message}`, {
+            module: name,
+            error: message,
+          }),
       },
     });
     // 初始扫描：加载模块文件夹中已有的 YAML 配置
@@ -103,14 +120,14 @@ export class ConnectCore {
     if (!this.startedFlag) return;
     // 先广播核心关闭事件，让模块有机会收尾
     await this.sendEvent('core:shutdown', undefined, 'core');
-    // 再按启动顺序的逆序停止所有运行中的模块
+    // 再按启动顺序的逆序停止所有运行中的模块（其公开数组随之消失）
     const running = [...this.modules.values()].filter((m) => m.status === 'running');
     for (const m of running.reverse()) {
       await this.stopModule(m.name);
     }
     await this.watcher?.stop();
     this.startedFlag = false;
-    this.log.record({ type: 'core:stop' });
+    this.writeLog(LOG_TYPES.CORE_STOP, 'core', '核心关闭');
     await this.log.close();
   }
 
@@ -126,11 +143,17 @@ export class ConnectCore {
     const slot = this.modules.get(name);
     if (!slot) throw new Error(`未知模块: ${name}`);
     if (slot.status === 'running') {
-      this.log.record({ type: 'module:start-skipped', module: name, reason: 'already-running' });
+      this.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块已在运行，跳过启动', {
+        module: name,
+        reason: 'already-running',
+      });
       return;
     }
     if (!slot.config.enabled) {
-      this.log.record({ type: 'module:start-skipped', module: name, reason: 'disabled' });
+      this.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块被禁用，跳过启动', {
+        module: name,
+        reason: 'disabled',
+      });
       return;
     }
     try {
@@ -142,8 +165,7 @@ export class ConnectCore {
       slot.status = 'running';
       slot.startedAt = Date.now();
       slot.error = undefined;
-      this.log.record({
-        type: 'module:start',
+      this.writeLog(LOG_TYPES.MODULE_START, name, describeStartReason(reason), {
         module: name,
         file: slot.config.file,
         reason: reason ?? 'manual',
@@ -151,33 +173,45 @@ export class ConnectCore {
     } catch (err) {
       slot.status = 'failed';
       slot.error = err instanceof Error ? err.message : String(err);
-      this.log.record({ type: 'module:start-failed', module: name, error: slot.error });
+      this.writeLog(LOG_TYPES.ERROR, name, `启动失败: ${slot.error}`, {
+        module: name,
+        error: slot.error,
+      });
     }
   }
 
-  /** 核心方法 2：关闭模块。 */
+  /** 核心方法 2：关闭模块。关闭后其公开的数组自动取消映射（自然消失，不留残档）。 */
   async stopModule(name: string): Promise<void> {
     const slot = this.modules.get(name);
     if (!slot) throw new Error(`未知模块: ${name}`);
     if (slot.status !== 'running') {
-      this.log.record({ type: 'module:stop-skipped', module: name, reason: 'not-running' });
+      this.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块未在运行，跳过关闭', {
+        module: name,
+        reason: 'not-running',
+      });
       return;
     }
     try {
       await slot.def?.stop?.(slot.ctx!);
       slot.status = 'stopped';
-      this.log.record({ type: 'module:stop', module: name });
     } catch (err) {
       slot.status = 'stopped';
-      this.log.record({
-        type: 'module:stop-failed',
+      this.writeLog(LOG_TYPES.ERROR, name, `关闭钩子失败: ${err instanceof Error ? err.message : String(err)}`, {
         module: name,
         error: err instanceof Error ? err.message : String(err),
       });
     }
+    // 模块关闭 -> 其公开的数组映射全部取消，数组随之消失
+    const removed = this.arrays.removeOwner(name);
+    this.writeLog(
+      LOG_TYPES.MODULE_STOP,
+      name,
+      removed.length > 0 ? `关闭模块，清理 ${removed.length} 个公共数组` : '关闭模块',
+      { module: name, removedArrays: removed },
+    );
   }
 
-  /** 核心方法 3：发送事件消息。核心会比对事件：启动匹配的模块 + 向监听模块发消息。 */
+  /** 核心方法 3：发送事件消息。核心比对事件：启动匹配的模块 + 向监听模块转发。 */
   async sendEvent(name: string, data?: unknown, source: string = 'external'): Promise<void> {
     if (!this.startedFlag) throw new Error('Connect-Core 未启动，不能发送事件');
     if (typeof name !== 'string' || name.length === 0) {
@@ -185,7 +219,6 @@ export class ConnectCore {
     }
     const event: CoreEvent = { name, data };
     this.occurred.add(name);
-    this.log.record({ type: 'event', event: name, source, data });
 
     // 1) 比对启动事件：未运行的模块若 startEvents 匹配，则启动它
     const toStart = [...this.modules.values()].filter(
@@ -195,16 +228,26 @@ export class ConnectCore {
       await this.startModule(m.name, name);
     }
 
-    // 2) 比对监听事件：向运行中且 listen 匹配的模块发送事件消息
-    for (const m of this.modules.values()) {
-      if (m.status !== 'running' || !m.ctx || !m.def?.onEvent) continue;
-      if (!anyEventMatches(m.config.listen, name)) continue;
+    // 2) 比对监听事件：收集匹配的监听模块，记录核心动作（转发或丢弃）
+    const listeners = [...this.modules.values()].filter(
+      (m) => m.status === 'running' && m.ctx && m.def?.onEvent && anyEventMatches(m.config.listen, name),
+    );
+    if (listeners.length === 0) {
+      this.writeLog(LOG_TYPES.EVENT_DROP, source, name, { event: name, data });
+    } else {
+      this.writeLog(LOG_TYPES.EVENT, source, name, {
+        event: name,
+        data,
+        recipients: listeners.map((m) => m.name),
+      });
+    }
+
+    // 3) 向监听模块发送事件消息（单个模块失败不影响其他模块）
+    for (const m of listeners) {
       try {
-        await m.def.onEvent(m.ctx, event);
+        await m.def!.onEvent!(m.ctx!, event);
       } catch (err) {
-        this.log.record({
-          type: 'module:event-failed',
-          module: m.name,
+        this.writeLog(LOG_TYPES.ERROR, m.name, `处理事件 ${name} 失败: ${err instanceof Error ? err.message : String(err)}`, {
           event: name,
           error: err instanceof Error ? err.message : String(err),
         });
@@ -221,7 +264,10 @@ export class ConnectCore {
       yamlPath,
       status: 'stopped',
     });
-    this.log.record({ type: 'config:load', module: cfg.name, file: cfg.file });
+    this.writeLog(LOG_TYPES.CONFIG_LOAD, cfg.name, `加载配置 ${cfg.name}`, {
+      module: cfg.name,
+      file: cfg.file,
+    });
     // 若启动事件已经出现过，立即启动模块
     if (cfg.enabled !== false && this.occurred.size > 0) {
       const happened = [...this.occurred].some((e) => anyEventMatches(cfg.startEvents, e));
@@ -242,9 +288,12 @@ export class ConnectCore {
       startedAt: prev?.startedAt,
       error: prev?.error,
     });
-    this.log.record({ type: 'config:update', module: cfg.name, file: cfg.file });
+    this.writeLog(LOG_TYPES.CONFIG_UPDATE, cfg.name, `更新配置 ${cfg.name}`, {
+      module: cfg.name,
+      file: cfg.file,
+    });
     if (wasRunning) {
-      // 配置变化：重启模块以应用新配置
+      // 配置变化：重启模块以应用新配置（旧数组随停止消失，start 重新映射新对象）
       await this.stopModule(cfg.name);
       if (cfg.enabled !== false) await this.startModule(cfg.name, 'config-update');
     } else if (cfg.enabled !== false) {
@@ -258,40 +307,34 @@ export class ConnectCore {
     if (!slot) return;
     if (slot.status === 'running') await this.stopModule(name);
     this.modules.delete(name);
-    this.log.record({ type: 'config:remove', module: name });
+    this.writeLog(LOG_TYPES.CONFIG_REMOVE, name, `移除配置 ${name}`, { module: name });
   }
 
-  // ==================== 公共数组（模块内方法 2-5 的核心实现） ====================
+  // ==================== 公共数组（映射语义） ====================
 
-  /** 公开数组（模块选择公开的数组）。同拥有者重新公开 = 重置内容（模块重启场景）。 */
-  exposeArray(name: string, owner: string, initial: unknown[] = []): void {
-    if (this.arrays.has(name)) {
-      if (this.arrays.ownerOf(name) === owner) {
-        this.arrays.reset(name, owner, initial);
-        this.log.record({ type: 'array:reset', array: name, owner });
-        return;
-      }
-      throw new Error(`公共数组已存在: ${name}（拥有者 ${this.arrays.ownerOf(name)}）`);
-    }
-    this.arrays.expose(name, owner, initial);
-    this.log.record({ type: 'array:expose', array: name, owner });
+  /** 公开数组：把模块的数组对象映射到名字（存引用，不拷贝）。 */
+  exposeArray(name: string, owner: string, items: unknown[] = []): void {
+    this.arrays.expose(name, owner, items);
   }
 
   /** 取消公开数组（仅拥有者）。 */
   unexposeArray(name: string, owner: string): void {
     this.arrays.unexpose(name, owner);
-    this.log.record({ type: 'array:unexpose', array: name, owner });
   }
 
-  /** 拉取特定数组（深拷贝快照）。 */
-  pullArray<T = any>(name: string): T[] {
-    return this.arrays.pull<T>(name);
+  /** 拉取特定数组：返回被映射的对象引用（O(1)），像原生数组一样直接使用。 */
+  array<T = any>(name: string): T[] {
+    return this.arrays.get<T>(name);
   }
 
-  /** 编辑特定数组的内容（不能改变数组名）。 */
+  /** 显式深拷贝快照（需要数据隔离的场合才用）。 */
+  snapshotArray<T = any>(name: string): T[] {
+    return this.arrays.snapshot<T>(name);
+  }
+
+  /** 编辑特定数组的内容（受控操作；数组名不可改变）。 */
   editArray(name: string, op: ArrayOp): void {
     this.arrays.edit(name, op);
-    this.log.record({ type: 'array:edit', array: name, op });
   }
 
   /** 列出所有公共数组名。 */
@@ -328,12 +371,10 @@ export class ConnectCore {
     };
   }
 
-  /** 模块自有日志（写入事件流水，type=module:log）。 */
+  /** 模块自有日志（模块显式请求核心记录，type=module-log）。 */
   logModule(moduleName: string, ...parts: unknown[]): void {
-    this.log.record({
-      type: 'module:log',
+    this.writeLog(LOG_TYPES.MODULE_LOG, moduleName, parts.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join(' '), {
       module: moduleName,
-      message: parts.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join(' '),
     });
   }
 }
