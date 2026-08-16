@@ -1,4 +1,6 @@
 node_modules/
 dist/
 logs/
-*.log.test-build/.npm-cache/
+*.log
+.test-build/
+.npm-cache/
