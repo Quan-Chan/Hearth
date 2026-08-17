@@ -30,6 +30,8 @@ export const LOG_TYPES = {
   CONFIG_REMOVE: 'config-remove',
   // 模块自定义日志（模块显式请求核心记录）
   MODULE_LOG: 'module-log',
+  // CLI 指令（可选 cli 模块经 core:cli:* 命令面发来的管理请求）
+  CLI_COMMAND: 'cli-command',
   // 错误（启动失败、事件处理失败、配置解析失败等）
   ERROR: 'error',
 } as const;
@@ -51,6 +53,7 @@ const TYPE_TO_CATEGORY: Record<string, LogCategory> = {
   'config-update': 'config',
   'config-remove': 'config',
   'module-log': 'log',
+  'cli-command': 'module',
   error: 'error',
 };
 

@@ -21,7 +21,8 @@
     "test:integration": "tsc -p tsconfig.test.json && node --test-isolation=none --test \".test-build/tests/integration/**/*.test.js\"",
     "test:apps": "tsc -p tsconfig.test.json && node --test-isolation=none --test \".test-build/tests/apps/**/*.test.js\"",
     "demo": "node examples/basic/demo.cjs",
-    "demo:web": "node examples/web-demo/server.cjs"
+    "demo:web": "node examples/web-demo/server.cjs",
+    "demo:cli": "node dist/cli.js examples/cli/connect-core.yaml"
   },
   "dependencies": {
     "yaml": "^2.5.1"

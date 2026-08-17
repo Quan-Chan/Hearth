@@ -100,7 +100,7 @@ module.exports = {
 | `source` | ② 日志来源：动作涉及的对象 | `core` / `external` / 模块名 |
 | `message` | ③ 日志信息：人类可读的具体内容 | `echo` / `事件 core:startup 匹配启动条件` |
 
-**日志类型全集**：`core-start` `core-stop`（核心启停）、`event`（收到并转发）、`event-drop`（收到但无模块匹配，丢弃）、`module-start` `module-stop` `module-skip`（模块启停）、`config-load` `config-update` `config-remove`（配置热加载）、`module-log`（模块显式请求的日志）、`error`。
+**日志类型全集**：`core-start` `core-stop`（核心启停）、`event`（收到并转发）、`event-drop`（收到但无模块匹配，丢弃）、`module-start` `module-stop` `module-skip`（模块启停）、`config-load` `config-update` `config-remove`（配置热加载）、`module-log`（模块显式请求的日志）、`cli-command`（CLI 指令）、`error`。
 
 > 数组操作（公开/编辑/读取）**不记录日志**——数组是模块间的数据通道，可能是高频流式操作，逐条记录会撑爆日志。
 
@@ -122,12 +122,12 @@ module.exports = {
 
 测试策略：先分析框架能做什么（事件驱动插件化），再选取依赖这些能力的真实软件形态，把它们构建在框架之上进行端到端验证。
 
-**63 个测试用例全部通过**（`npm test`）：
+**69 个测试用例全部通过**（`npm test`）：
 
 | 层级 | 文件 | 覆盖 |
 | --- | --- | --- |
-| 单元 | `tests/unit/`（6 文件，36 用例） | 事件匹配器、公共数组注册表、事件流水日志、YAML 解析、模块加载、日志格式 |
-| 集成 | `tests/integration/`（3 文件，17 用例） | 核心生命周期、事件路由、失败隔离、YAML 热加载（新增/更新/删除/非法）、公共数组跨模块 |
+| 单元 | `tests/unit/`（6 文件，31 用例） | 事件匹配器、公共数组注册表、事件流水日志、YAML 解析、模块加载、日志格式 |
+| 集成 | `tests/integration/`（5 文件，28 用例） | 核心生命周期、事件路由、失败隔离、YAML 热加载、公共数组跨模块、模块自改 YAML、CLI 命令面 |
 | 应用 | `tests/apps/`（5 文件，10 用例） | 见下表 |
 
 **构建在框架上的真实软件（即测试载体）：**
@@ -160,18 +160,45 @@ examples/web-demo/    # 演示：网页控制台（数据工坊，npm run demo:w
   modules/            # 模块 YAML + 程序（collector / processor / reporter / alarm / notifier）
   server.cjs          # HTTP 服务器 + 网页控制
   public/index.html   # 控制页面
+examples/cli/         # 演示：CLI（可选模块，npm run demo:cli）
+  modules/            # cli（REPL 命令面）+ echo（不监听，被定向发送）+ listener（正常监听）
+  connect-core.yaml   # cli 模块所在整机的配置
 ```
+
+## 6.5 CLI（可选模块）
+CLI 是一个**可选模块**（`examples/cli/modules/cli.*`）：把它放进模块目录，核心启动后你就获得一个命令行界面；不放它就完全没有 CLI。它必须与核心的 CLI 命令面联动才能工作——启动时它会发一条 `core:cli:state` 自检，核心不回应则 CLI 不可用。
+
+```bash
+npm run demo:cli    # 交互式 REPL（或 node dist/cli.js examples/cli/connect-core.yaml）
+```
+
+**核心只提供命令面（`core:cli:*` 指令即事件），界面、解析、日志展示等高级功能全部在 cli 模块端实现**——核心保持极简。
+
+| 指令 | 作用 | 核心命令面 |
+| --- | --- | --- |
+| `event <名称> [JSON]` | 生成一个自定义事件 | 直接 `ctx.sendEvent`（普通事件通道） |
+| `start <模块>` | 开启模块（即使没有事件） | `core:cli:start-module` |
+| `stop <模块>` | 关闭模块 | `core:cli:stop-module` |
+| `send <目标|*> <名称> [JSON]` | 定向发送事件（目标无需监听；`*` 广播） | `core:cli:send-event` |
+| `state` | 查看模块与公共数组（回复 `core:cli:reply-state`） | `core:cli:state` |
+| `log [过滤词] [条数]` | 查看日志时间线（CLI 自己读 JSONL 文件 grep，核心不参与） | — |
+| `help` / `exit` | 帮助 / 优雅关闭（`core:cli:stop-core`） | — |
+
+**响应的两种模式**（不把所有东西塞进事件）：
+- (a) 模块只广播"已完成/有信息"信号事件（如 echo 处理完广播 `echo:done`）；
+- (b) 实际内容放公开数组（如 `echo:out`），CLI 或其他模块用 `ctx.array()` 自己拉取——`state` 命令只回名字/状态，内容由 cli 模块拉。
 
 ## 7. 常用命令
 
 ```bash
 npm run typecheck     # 类型检查
 npm run build         # 编译到 dist/
-npm test              # 全量测试（63 用例）
+npm test              # 全量测试（69 用例）
 npm run test:unit     # 仅单元
 npm run test:integration
 npm run test:apps
 npm run demo          # 最小整机演示（examples/basic）
 npm run demo:web      # 网页演示（http://127.0.0.1:3081）
+npm run demo:cli      # 命令行演示（examples/cli，交互式 REPL）
 npm start             # 用 node dist/cli.js 启动（读当前目录 connect-core.yaml）
 ```

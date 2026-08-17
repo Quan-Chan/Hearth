@@ -1,0 +1,8 @@
+name: cli
+file: ./cli.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "core:cli:reply-state"
+config:
+  logFile: ../logs/event-stream.log

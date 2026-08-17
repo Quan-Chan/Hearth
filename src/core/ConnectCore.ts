@@ -43,6 +43,15 @@ interface ModuleSlot {
   error?: string;
 }
 
+/** 核心 CLI 命令面：保留给可选 cli 模块的管理指令（指令即事件，事件名即命令）。 */
+const CLI_COMMANDS = new Set<string>([
+  'core:cli:start-module',
+  'core:cli:stop-module',
+  'core:cli:send-event',
+  'core:cli:state',
+  'core:cli:stop-core',
+]);
+
 /** 模块启动原因 -> 人类可读描述。 */
 function describeStartReason(reason?: string): string {
   if (!reason || reason === 'manual') return '手动启动';
@@ -217,6 +226,13 @@ export class ConnectCore {
       throw new Error('事件名必须是非空字符串');
     }
     const event: CoreEvent = { name, data };
+
+    // CLI 指令拦截：core:cli:* 是核心自己的命令面（不进普通事件路由，不记入 occurred）
+    if (CLI_COMMANDS.has(name)) {
+      await this.handleCliCommand(source, event);
+      return;
+    }
+
     this.occurred.add(name);
 
     // 1) 比对启动事件：未运行的模块若 startEvents 匹配，则启动它
@@ -250,6 +266,95 @@ export class ConnectCore {
           event: name,
           error: err instanceof Error ? err.message : String(err),
         });
+      }
+    }
+  }
+
+  // ==================== CLI 命令面（响应可选 cli 模块的管理请求） ====================
+
+  /**
+   * 处理 core:cli:* 管理指令（指令即事件，由 sendEvent 拦截后调用）。
+   * 只做核心自己该做的事；展示/交互等高级功能全部留在 cli 模块端实现。
+   */
+  private async handleCliCommand(source: string, event: CoreEvent): Promise<void> {
+    const d = (event.data ?? {}) as Record<string, unknown>;
+    const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+    const running = (m: ModuleSlot): boolean => m.status === 'running' && !!m.def?.onEvent;
+
+    switch (event.name) {
+      case 'core:cli:start-module': {
+        const name = str(d.name);
+        if (!name) throw new Error('cli:start-module 需要参数 name');
+        this.writeLog(LOG_TYPES.CLI_COMMAND, source, 'CLI 指令: 启动模块', { command: 'start-module', module: name });
+        await this.startModule(name, 'cli');
+        break;
+      }
+      case 'core:cli:stop-module': {
+        const name = str(d.name);
+        if (!name) throw new Error('cli:stop-module 需要参数 name');
+        this.writeLog(LOG_TYPES.CLI_COMMAND, source, 'CLI 指令: 关闭模块', { command: 'stop-module', module: name });
+        await this.stopModule(name);
+        break;
+      }
+      case 'core:cli:send-event': {
+        // 定向发送：无论目标模块是否声明了 listen，都直接把事件信息送达；
+        // targets === '*' 时发送给所有运行中的模块。
+        const eventName = str(d.name);
+        if (!eventName) throw new Error('cli:send-event 需要参数 name');
+        const targets = d.targets;
+        const all = targets === undefined || targets === null || targets === '*';
+        const wanted = all
+          ? null
+          : (Array.isArray(targets)
+              ? targets.map(String)
+              : String(targets).split(',').map((s) => s.trim()).filter(Boolean));
+        const recipients = all
+          ? [...this.modules.values()].filter(running)
+          : wanted!.map((nm) => this.modules.get(nm)).filter((m): m is ModuleSlot => !!m && running(m));
+        const payload: CoreEvent = { name: eventName, data: d.data };
+        if (recipients.length === 0) {
+          this.writeLog(LOG_TYPES.EVENT_DROP, source, eventName, {
+            event: eventName,
+            data: d.data,
+            note: 'cli 定向发送: 无有效接收模块（目标未运行/不存在）',
+          });
+          break;
+        }
+        this.writeLog(LOG_TYPES.EVENT, source, eventName, {
+          event: eventName,
+          data: d.data,
+          recipients: recipients.map((m) => m.name),
+          directed: true,
+        });
+        for (const m of recipients) {
+          try {
+            await m.def!.onEvent!(m.ctx!, payload);
+          } catch (err) {
+            this.writeLog(LOG_TYPES.ERROR, m.name, '处理定向事件失败: ' + (err instanceof Error ? err.message : String(err)), {
+              event: eventName,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+        break;
+      }
+      case 'core:cli:state': {
+        this.writeLog(LOG_TYPES.CLI_COMMAND, source, 'CLI 指令: 查询核心状态', { command: 'state' });
+        const modules = [...this.modules.values()].map((m) => ({
+          name: m.name,
+          status: m.status,
+          startedAt: m.startedAt,
+          error: m.error,
+        }));
+        const arrays = this.arrays.list();
+        // 回复是普通事件（core:cli:reply-state），走正常转发，由 cli 模块自己接收展示
+        await this.sendEvent('core:cli:reply-state', { modules, arrays }, 'core');
+        break;
+      }
+      case 'core:cli:stop-core': {
+        this.writeLog(LOG_TYPES.CLI_COMMAND, source, 'CLI 指令: 关闭核心', { command: 'stop-core' });
+        await this.stop();
+        break;
       }
     }
   }

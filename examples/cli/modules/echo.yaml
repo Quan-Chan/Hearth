@@ -1,0 +1,5 @@
+name: echo
+file: ./echo.cjs
+startEvents:
+  - "core:startup"
+listen: []          # 故意不监听任何事件：只能被 CLI 定向发送唤醒
