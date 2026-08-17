@@ -1,7 +1,0 @@
-name: collector
-file: ./collector.cjs
-startEvents:
-  - "core:startup"
-listen:
-  - "app:produce"
-  - "app:clear"

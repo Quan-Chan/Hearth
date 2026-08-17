@@ -1,6 +1,0 @@
-name: processor
-file: ./processor.cjs
-startEvents:
-  - "core:startup"
-listen:
-  - "app:produce"

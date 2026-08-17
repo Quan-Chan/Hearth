@@ -1,6 +1,0 @@
-name: reporter
-file: ./reporter.cjs
-startEvents:
-  - "core:startup"
-listen:
-  - "app:processed"

@@ -26,15 +26,17 @@
 npm install
 npm run build
 
-# 方式一：命令行启动（读取 connect-core.yaml）
-node dist/cli.js examples/basic/connect-core.yaml
+# 方式一：命令行启动（读取根目录 connect-core.yaml，模块目录 ./modules）
+npm start
+# 或：node dist/cli.js          —— 启动核心 == 启动整个软件（附带 CLI 命令行界面，见 §6.5）
 
 # 方式二：代码启动（启动即整机）
 ```ts
 import { startCore } from './src/index';
-const core = await startCore({ moduleDir: './examples/basic/modules' });
-await core.sendEvent('echo', { text: '世界' });
-console.log(core.array('greetings')); // ['你好, 世界!']
+const core = await startCore({ moduleDir: './modules' });
+// 模块已按事件自动启动；用核心 API 直接发事件、读/写公共数组
+await core.sendEvent('自定义事件', { some: 'data' });
+console.log(core.listModules());
 await core.stop();
 ```
 ```
@@ -138,7 +140,7 @@ module.exports = {
 | 任务调度器 | cron / 任务队列 / CI 调度 | scheduler / worker / notifier | 提交→定时到期→执行→通知全链路、取消任务 |
 | 智能家居 | Home Assistant / 米家自动化 | sensor / light / logger / thermostat / cooler | 多模块同听一事件、温度超阈值链式制冷、通配符安全日志 |
 | 监控告警 | Prometheus 告警 / APM | collector / alerting / dashboard | 指标去重聚合、YAML 阈值配置、告警历史归档 |
-| 启动即整机 | 框架核心形态 | examples/basic | `startCore` 一次启动全部模块，链式事件协作 |
+| 启动即整机 | 框架核心形态 | 任意 modules/ 目录 | `startCore` 一次启动全部模块，模块按事件链式协作 |
 
 ## 6. 目录结构
 
@@ -153,23 +155,19 @@ tests/
   integration/        # 集成测试
   apps/               # 真实软件测试（聊天机器人/任务调度器/智能家居/监控告警）
   fixtures/           # 各应用的模块夹具
-examples/basic/       # 演示：最小可用整机
-  modules/            # 模块 YAML + 程序（echo / greeter）
-  demo.cjs            # 演示脚本（npm run demo）
-examples/web-demo/    # 演示：网页控制台（数据工坊，npm run demo:web）
-  modules/            # 模块 YAML + 程序（collector / processor / reporter / alarm / notifier）
-  server.cjs          # HTTP 服务器 + 网页控制
-  public/index.html   # 控制页面
-examples/cli/         # 演示：CLI（可选模块，npm run demo:cli）
-  modules/            # cli（REPL 命令面）+ echo（不监听，被定向发送）+ listener（正常监听）
-  connect-core.yaml   # cli 模块所在整机的配置
+modules/             # 模块生态（每个模块一个文件夹，一律平级）
+  cli/                # 命令行界面模块（cli.yaml + cli.cjs，可选）
+  …/                  # 你的更多模块（每个一个文件夹）
+connect-core.yaml     # 根配置：moduleDir: ./modules -> npm start 启动核心=整机
 ```
 
 ## 6.5 CLI（可选模块）
-CLI 是一个**可选模块**（`examples/cli/modules/cli.*`）：把它放进模块目录，核心启动后你就获得一个命令行界面；不放它就完全没有 CLI。它必须与核心的**门铃协议**联动才能工作——启动时会提交一条 `ping` 指令自检，收不到完成门铃则 CLI 不可用。
+CLI 是一个**可选模块**（`modules/cli/`）：它在模块生态里，核心启动后你就获得一个命令行界面；不放它就完全没有 CLI。它必须与核心的**门铃协议**联动才能工作——启动时会提交一条 `ping` 指令自检，收不到完成门铃则 CLI 返回"核心未响应"并退出。
 
 ```bash
-npm run demo:cli    # 交互式 REPL（或 node dist/cli.js examples/cli/connect-core.yaml）
+npm start    # 启动核心 == 启动整个软件（附带 CLI 命令行界面）
+# 或 node dist/cli.js            （读取根目录 connect-core.yaml）
+# 或 npm run cli
 ```
 
 **通信协议（约定式：事件=门铃、数组=内容）**——核心只实现协议，界面、解析、日志展示等高级功能全部在 cli 模块端。
@@ -184,6 +182,7 @@ npm run demo:cli    # 交互式 REPL（或 node dist/cli.js examples/cli/connect
 | ⑥ | CLI | 收到后从 `core:results` 取对应 id 的结果并展示 | 数组读取 |
 
 事件里只带 `id`（用于对应），**数组名是双方约定、不放进事件**；结果数据不塞进事件，CLI 自己去结果数组拉。
+
 | 指令 | 作用 | 传给核心的 cmd/args |
 | --- | --- | --- |
 | `event <名称> [JSON]` | 生成一个自定义事件 | `{cmd:'event', args:{name, data}}` |
@@ -195,8 +194,9 @@ npm run demo:cli    # 交互式 REPL（或 node dist/cli.js examples/cli/connect
 | `help` / `exit` | 帮助 / 优雅关闭 | `{cmd:'exit'}` → 核心停止 |
 
 **响应的两种模式**（CLI 与核心之间、模块之间通用）：
-- (a) 事件 = 门铃：只广播"已完成/有信息/有请求"这类信号（如 `cli:request`/`cli:done`、echo 的 `echo:done`），载荷极轻；
-- (b) 数组 = 内容：真正的数据放公开数组（如 `core:results`/`echo:out`），接收方用 `ctx.array()` 自己拉取，不把大块内容塞进事件。
+- (a) 事件 = 门铃：只广播"已完成/有信息/有请求"这类信号（如 `cli:request` / `cli:done`、某模块的 `xxx:done`），载荷极轻；
+- (b) 数组 = 内容：真正的数据放公开数组（如 `core:results`、各模块自己的 `xxx:out`），接收方用 `ctx.array()` 自己拉取，不把大块内容塞进事件信息。
+- 约定示例（门铃协议）：数组名 `cli:commands` / `core:results` 是双方约定；事件里的 `id` 只用于对应，连数组名都不需要带。
 
 ## 7. 常用命令
 
@@ -207,8 +207,6 @@ npm test              # 全量测试（72 用例）
 npm run test:unit     # 仅单元
 npm run test:integration
 npm run test:apps
-npm run demo          # 最小整机演示（examples/basic）
-npm run demo:web      # 网页演示（http://127.0.0.1:3081）
-npm run demo:cli      # 命令行演示（examples/cli，交互式 REPL）
-npm start             # 用 node dist/cli.js 启动（读当前目录 connect-core.yaml）
+npm start             # 启动核心==整机（读 connect-core.yaml，附带 CLI 界面）
+npm run cli           # 同 npm start（node dist/cli.js）
 ```

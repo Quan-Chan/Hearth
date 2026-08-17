@@ -1,5 +1,6 @@
 /**
- * 模块文件夹监听器：框架核心始终监听模块文件夹。
+ * 模块文件夹监听器：框架核心始终监听模块文件夹（递归子目录）。
+ * 模块布局约定：每个模块一个文件夹，文件夹内放 <name>.yaml + <name>.cjs。
  *  - 新的 YAML 配置文件出现   -> onLoad
  *  - 已有 YAML 文件内容变化   -> onUpdate
  *  - YAML 文件被删除          -> onRemove
@@ -64,13 +65,9 @@ export class ConfigWatcher {
     if (this.scanning) return;
     this.scanning = true;
     try {
-      const files = fs
-        .readdirSync(this.dir)
-        .filter((f) => /\.ya?ml$/i.test(f))
-        .sort();
+      const files = collectYamlFiles(this.dir);
       const seen = new Set<string>();
-      for (const f of files) {
-        const yamlPath = path.join(this.dir, f);
+      for (const yamlPath of files) {
         let text: string;
         try {
           text = fs.readFileSync(yamlPath, 'utf8');
@@ -80,10 +77,11 @@ export class ConfigWatcher {
         const hash = createHash('sha1').update(text).digest('hex');
         let cfg: ModuleConfig;
         try {
-          cfg = parseModuleConfig(text, this.dir);
+          // file 相对路径按 YAML 自己所在目录解析（每模块一文件夹）
+          cfg = parseModuleConfig(text, path.dirname(yamlPath));
         } catch (err) {
           this.callbacks.onError?.(
-            path.basename(f, path.extname(f)),
+            path.basename(yamlPath, path.extname(yamlPath)),
             err instanceof Error ? err.message : String(err),
           );
           continue;
@@ -112,6 +110,30 @@ export class ConfigWatcher {
   listNames(): string[] {
     return [...this.known.keys()];
   }
+}
+
+/** 递归收集模块目录下所有 YAML 文件（支持每模块一文件夹的布局）。确定性顺序，跳过 node_modules 与隐藏目录。 */
+function collectYamlFiles(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (d: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    } catch {
+      return;
+    }
+    for (const ent of entries) {
+      const p = path.join(d, ent.name);
+      if (ent.isDirectory()) {
+        if (ent.name === 'node_modules' || ent.name.startsWith('.')) continue;
+        walk(p);
+      } else if (/\.ya?ml$/i.test(ent.name)) {
+        out.push(p);
+      }
+    }
+  };
+  walk(dir);
+  return out;
 }
 
 /** 解析模块 YAML 文本为 ModuleConfig。file 相对路径基于 baseDir 解析。 */

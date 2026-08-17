@@ -1,27 +1,37 @@
 /**
  * 启动即整机：从公共入口 startCore 启动核心 == 启动整个软件，
- * 无需单独启动任何模块（examples/basic 演示目录）。
+ * 无需单独启动任何模块（模块按 YAML 的 startEvents 看事件自动启动）。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'fs';
 import * as path from 'path';
 import { startCore, createCore } from '../../src/index';
-import { mkTmpDir, rmDir } from '../helpers';
-
-const ROOT = path.resolve(__dirname, '..', '..', '..');
-const DEMO_DIR = path.join(ROOT, 'examples', 'basic', 'modules');
+import { mkTmpDir, rmDir, yamlFor } from '../helpers';
 
 test('startCore：一次启动整机软件，模块按事件自动启动', async () => {
   const tmp = mkTmpDir('boot');
   try {
-    const core = await startCore({ moduleDir: DEMO_DIR, logFile: path.join(tmp, 'boot.log'), watch: false });
+    // 自包含夹具：hello 模块 core:startup 即启动；echo 模块监听 greet
+    fs.writeFileSync(
+      path.join(tmp, 'hello.cjs'),
+      `module.exports = { name: 'hello', start(ctx){ ctx.exposeArray('hello:marks', ['ready']); }, onEvent(ctx, e){ ctx.array('hello:marks').push(e.name); } };`,
+    );
+    fs.writeFileSync(path.join(tmp, 'hello.yaml'), yamlFor('hello', { startEvents: ['core:startup'], listen: ['greet'] }));
+    fs.writeFileSync(
+      path.join(tmp, 'echo.cjs'),
+      `module.exports = { name: 'echo', onEvent(ctx, e){ ctx.sendEvent('greet', { name: e.data && e.data.text }); } };`,
+    );
+    fs.writeFileSync(path.join(tmp, 'echo.yaml'), yamlFor('echo', { startEvents: ['core:startup'], listen: ['echo'] }));
+
+    const core = await startCore({ moduleDir: tmp, logFile: path.join(tmp, 'boot.log'), watch: false });
     assert.equal(core.started, true);
-    // 无需手动启动任何模块
-    assert.deepEqual(core.listModules().map((m) => m.name).sort(), ['echo', 'greeter']);
-    assert.equal(core.getModule('greeter')!.status, 'running');
-    // 链式协作：echo 事件 -> greet 事件 -> greetings 数组
+    // 无需手动启动任何模块：core:startup 自动拉起
+    assert.deepEqual(core.listModules().map((m) => m.name).sort(), ['echo', 'hello']);
+    assert.equal(core.getModule('hello')!.status, 'running');
+    // 链式协作：echo 事件 -> greet 事件 -> hello 记录
     await core.sendEvent('echo', { text: '世界' });
-    assert.deepEqual(core.array('greetings'), ['你好, 世界!']);
+    assert.deepEqual(core.array('hello:marks'), ['ready', 'greet']);
     await core.stop();
     assert.equal(core.started, false);
   } finally {
@@ -32,10 +42,16 @@ test('startCore：一次启动整机软件，模块按事件自动启动', async
 test('createCore + start 与 startCore 等价', async () => {
   const tmp = mkTmpDir('boot');
   try {
-    const core = createCore({ moduleDir: DEMO_DIR, logFile: path.join(tmp, 'boot.log'), watch: false });
+    fs.writeFileSync(
+      path.join(tmp, 'hello.cjs'),
+      `module.exports = { name: 'hello', start(){} };`,
+    );
+    fs.writeFileSync(path.join(tmp, 'hello.yaml'), yamlFor('hello', { startEvents: ['core:startup'] }));
+    const core = createCore({ moduleDir: tmp, logFile: path.join(tmp, 'boot.log'), watch: false });
     assert.equal(core.started, false);
     await core.start();
     assert.equal(core.started, true);
+    assert.equal(core.getModule('hello')!.status, 'running');
     await core.stop();
   } finally {
     rmDir(tmp);

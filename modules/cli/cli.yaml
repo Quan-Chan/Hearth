@@ -1,0 +1,8 @@
+name: cli
+file: ./cli.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "cli:done"
+config:
+  logFile: ../../logs/event-stream.log   # 相对本模块文件夹（modules/cli/）-> 根 logs/

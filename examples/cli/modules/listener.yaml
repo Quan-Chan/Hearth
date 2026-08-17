@@ -1,7 +1,0 @@
-name: listener
-file: ./listener.cjs
-startEvents:
-  - "core:startup"
-listen:
-  - "hello"
-  - "ping:*"

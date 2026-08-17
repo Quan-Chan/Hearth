@@ -1,8 +1,0 @@
-name: alarm
-file: ./alarm.cjs
-startEvents:
-  - "stats:updated"
-listen:
-  - "stats:updated"
-config:
-  threshold: 100
