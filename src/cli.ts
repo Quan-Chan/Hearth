@@ -34,7 +34,7 @@ async function main(): Promise<void> {
   const core = await startCore(options);
 
   // eslint-disable-next-line no-console
-  console.log('[connect-core] 核心已启动 —— 启动它等于启动整个软件');
+  console.log('[connect-core] 核心已启动');
   // eslint-disable-next-line no-console
   console.log(`[connect-core] 模块目录: ${core.options.moduleDir}`);
   // eslint-disable-next-line no-console
