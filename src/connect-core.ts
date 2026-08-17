@@ -1,6 +1,6 @@
 /**
- * Connect-Core 命令行入口：启动它等于启动整个软件。
- * 用法：node dist/cli.js [connect-core.yaml]
+ * Connect-Core 启动入口：启动核心（= 启动整机，模块按事件自动起来）。
+ * 用法：node dist/connect-core.js [connect-core.yaml]
  * 配置文件示例：
  *   core:
  *     moduleDir: ./modules

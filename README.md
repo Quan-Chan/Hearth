@@ -28,7 +28,7 @@ npm run build
 
 # 方式一：命令行启动（读取根目录 connect-core.yaml，模块目录 ./modules）
 npm start
-# 或：node dist/cli.js          —— 启动核心 == 启动整个软件（附带 CLI 命令行界面，见 §6.5）
+# 或：node dist/connect-core.js —— 启动核心（模块按事件自动起来，CLI 界面见 §6.5）
 
 # 方式二：代码启动（启动即整机）
 ```ts
@@ -149,7 +149,7 @@ src/                  # 框架核心（极简中间层）
   core/               # ConnectCore / EventMatcher / ArrayRegistry / ConfigWatcher / EventStreamLog / ModuleContext
   module/loadModule.ts# 模块程序加载器
   index.ts            # 公共入口（createCore / startCore）
-  cli.ts              # 命令行入口（启动即整机）
+  connect-core.ts     # 启动入口：启动核心（= 整机，模块按事件自动起来）
 tests/
   unit/               # 单元测试
   integration/        # 集成测试
@@ -166,7 +166,7 @@ CLI 是一个**可选模块**（`modules/cli/`）：它在模块生态里，核�
 
 ```bash
 npm start    # 启动核心 == 启动整个软件（附带 CLI 命令行界面）
-# 或 node dist/cli.js            （读取根目录 connect-core.yaml）
+# 或 node dist/connect-core.js   （读取根目录 connect-core.yaml）
 # 或 npm run cli
 ```
 
@@ -208,5 +208,5 @@ npm run test:unit     # 仅单元
 npm run test:integration
 npm run test:apps
 npm start             # 启动核心==整机（读 connect-core.yaml，附带 CLI 界面）
-npm run cli           # 同 npm start（node dist/cli.js）
+npm start             # 唯一启动入口：启动核心
 ```
