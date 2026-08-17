@@ -5,6 +5,6 @@ module.exports = {
     ctx.exposeArray('home:log', []);
   },
   onEvent(ctx, event) {
-    ctx.editArray('home:log', { type: 'push', value: { event: event.name, data: event.data, at: Date.now() } });
+    ctx.array('home:log').push({ event: event.name, data: event.data, at: Date.now() });
   },
 };

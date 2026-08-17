@@ -12,8 +12,8 @@ module.exports = {
       const c = event.data;
       const devices = ctx.array('home:devices');
       const idx = devices.findIndex((d) => d.room === c.room);
-      if (idx >= 0) ctx.editArray('home:devices', { type: 'set', index: idx, value: { room: c.room, cooling: true } });
-      else ctx.editArray('home:devices', { type: 'push', value: { room: c.room, cooling: true } });
+      if (idx >= 0) ctx.array('home:devices')[idx] = { room: c.room, cooling: true };
+      else ctx.array('home:devices').push({ room: c.room, cooling: true });
     }
   },
 };

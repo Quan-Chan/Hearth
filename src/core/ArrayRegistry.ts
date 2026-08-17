@@ -6,7 +6,6 @@
  * 公开者消失（模块停止）-> removeOwner 取消映射 -> 数组自然消失，不留残档。
  * 数组名一旦公开不可改变（没有改名操作）。
  */
-import type { ArrayOp } from '../types';
 
 export interface PublicArray {
   name: string;
@@ -49,16 +48,6 @@ export class ArrayRegistry {
     return arr.items as T[];
   }
 
-  /** 显式深拷贝快照（需要数据隔离的场合才用）。 */
-  snapshot<T = any>(name: string): T[] {
-    return structuredClone(this.get(name)) as T[];
-  }
-
-  /** 编辑内容（受控操作；内部直接改被映射对象）。数组名不可改变。 */
-  edit(name: string, op: ArrayOp): void {
-    applyOp(this.get(name), op);
-  }
-
   /** 删除某拥有者的全部映射（模块停止时调用）-> 数组从注册表消失。返回被删的数组名。 */
   removeOwner(owner: string): string[] {
     const removed: string[] = [];
@@ -84,70 +73,3 @@ export class ArrayRegistry {
   }
 }
 
-/** 对数组应用一个编辑操作。 */
-export function applyOp(items: unknown[], op: ArrayOp): void {
-  switch (op.type) {
-    case 'push': {
-      if (op.value !== undefined) items.push(op.value);
-      if (Array.isArray(op.values)) items.push(...op.values);
-      break;
-    }
-    case 'pop':
-      items.pop();
-      break;
-    case 'shift':
-      items.shift();
-      break;
-    case 'unshift':
-      items.unshift(op.value);
-      break;
-    case 'set': {
-      assertIndex(op.index, items);
-      items[op.index] = op.value;
-      break;
-    }
-    case 'removeAt': {
-      assertIndex(op.index, items);
-      items.splice(op.index, 1);
-      break;
-    }
-    case 'removeValue': {
-      const idx = items.findIndex((x) => deepEqual(x, op.value));
-      if (idx >= 0) items.splice(idx, 1);
-      break;
-    }
-    case 'splice': {
-      assertIndex(op.index, items);
-      const deleteCount = op.deleteCount ?? items.length - op.index;
-      const insert = Array.isArray(op.insert) ? op.insert : [];
-      items.splice(op.index, deleteCount, ...insert);
-      break;
-    }
-    case 'clear':
-      items.length = 0;
-      break;
-    case 'apply': {
-      const fn = op.fn;
-      if (typeof fn !== 'function') throw new Error('apply 操作需要 fn 函数');
-      const result = fn(items);
-      if (!Array.isArray(result)) throw new Error('apply 变换函数必须返回数组');
-      items.length = 0;
-      items.push(...result);
-      break;
-    }
-    default:
-      throw new Error(`不支持的数组操作: ${String((op as { type: string }).type)}`);
-  }
-}
-
-function assertIndex(index: number, items: unknown[]): void {
-  if (!Number.isInteger(index) || index < 0 || index >= items.length) {
-    throw new Error(`数组索引越界: ${index}（长度 ${items.length}）`);
-  }
-}
-
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (Object.is(a, b)) return true;
-  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
-  return JSON.stringify(a) === JSON.stringify(b);
-}

@@ -1,7 +1,0 @@
-name: producer
-file: ./producer.cjs
-startEvents:
-  - "core:startup"
-listen:
-  - "stock:add"
-  - "stock:clear"

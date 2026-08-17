@@ -9,7 +9,7 @@ module.exports = {
     const m = event.data;
     const threshold = ctx.config.config && typeof ctx.config.config.threshold === 'number' ? ctx.config.config.threshold : Infinity;
     if (typeof m.value === 'number' && m.value > threshold) {
-      ctx.editArray('alerts:active', { type: 'push', value: { name: m.name, value: m.value } });
+      ctx.array('alerts:active').push({ name: m.name, value: m.value });
       ctx.sendEvent('alert:fired', { name: m.name, value: m.value });
     }
   },

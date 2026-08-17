@@ -9,7 +9,7 @@ module.exports = {
     const m = event.data;
     const lights = ctx.array('home:lights');
     const idx = lights.findIndex((l) => l.room === m.room);
-    if (idx >= 0) ctx.editArray('home:lights', { type: 'set', index: idx, value: { room: m.room, on: !!m.motion } });
-    else ctx.editArray('home:lights', { type: 'push', value: { room: m.room, on: !!m.motion } });
+    if (idx >= 0) ctx.array('home:lights')[idx] = { room: m.room, on: !!m.motion };
+    else ctx.array('home:lights').push({ room: m.room, on: !!m.motion });
   },
 };

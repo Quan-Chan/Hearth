@@ -8,7 +8,7 @@ module.exports = {
   onEvent(ctx, event) {
     if (event.name !== 'greet') return;
     const text = '你好, ' + event.data.name + '!';
-    ctx.editArray('greetings', { type: 'push', value: text });
+    ctx.array('greetings').push(text);
     ctx.log('收到问候:', event.data.name);
   },
 };

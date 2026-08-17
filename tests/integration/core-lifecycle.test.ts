@@ -16,7 +16,7 @@ function makeFixtures(dir: string): void {
     ctx.exposeArray('boot:marks', ['started']);
   },
   onEvent(ctx, event) {
-    ctx.editArray('boot:marks', { type: 'push', value: event.name });
+    ctx.array('boot:marks').push(event.name);
   },
 };
 `,
@@ -27,7 +27,7 @@ function makeFixtures(dir: string): void {
     `module.exports = {
   name: 'lazy',
   onEvent(ctx, event) {
-    ctx.editArray('lazy:marks', { type: 'push', value: event.name });
+    ctx.array('lazy:marks').push(event.name);
   },
   start(ctx) {
     ctx.exposeArray('lazy:marks', ['lazy-started']);
@@ -41,7 +41,7 @@ function makeFixtures(dir: string): void {
     `module.exports = {
   name: 'wild',
   start(ctx) { ctx.exposeArray('wild:marks', []); },
-  onEvent(ctx, event) { ctx.editArray('wild:marks', { type: 'push', value: event.name }); },
+  onEvent(ctx, event) { ctx.array('wild:marks').push(event.name); },
 };
 `,
   );

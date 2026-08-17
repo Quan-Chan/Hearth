@@ -6,6 +6,6 @@ module.exports = {
   },
   onEvent(ctx, event) {
     if (event.name !== 'alert:fired') return;
-    ctx.editArray('alerts:history', { type: 'push', value: { name: event.data.name, value: event.data.value, at: Date.now() } });
+    ctx.array('alerts:history').push({ name: event.data.name, value: event.data.value, at: Date.now() });
   },
 };

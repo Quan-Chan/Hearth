@@ -9,7 +9,7 @@ module.exports = {
     const m = event.data;
     const sensors = ctx.array('home:sensors');
     const idx = sensors.findIndex((s) => s.room === m.room);
-    if (idx >= 0) ctx.editArray('home:sensors', { type: 'set', index: idx, value: { room: m.room, motion: m.motion } });
-    else ctx.editArray('home:sensors', { type: 'push', value: { room: m.room, motion: m.motion } });
+    if (idx >= 0) ctx.array('home:sensors')[idx] = { room: m.room, motion: m.motion };
+    else ctx.array('home:sensors').push({ room: m.room, motion: m.motion });
   },
 };

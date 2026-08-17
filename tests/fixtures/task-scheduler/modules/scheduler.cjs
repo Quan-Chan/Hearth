@@ -10,7 +10,7 @@ module.exports = {
   onEvent(ctx, event) {
     if (event.name === 'task:submit') {
       const t = event.data;
-      ctx.editArray('tasks:queue', { type: 'push', value: { id: t.id, name: t.name, status: 'queued' } });
+      ctx.array('tasks:queue').push({ id: t.id, name: t.name, status: 'queued' });
       const delay = typeof t.delayMs === 'number' ? t.delayMs : 10;
       const timer = setTimeout(() => {
         timers.delete(t.id);
@@ -25,7 +25,7 @@ module.exports = {
       }
       const queue = ctx.array('tasks:queue');
       const idx = queue.findIndex((x) => x.id === event.data.id);
-      if (idx >= 0) ctx.editArray('tasks:queue', { type: 'removeAt', index: idx });
+      if (idx >= 0) ctx.array('tasks:queue').splice(idx, 1);
     }
   },
   stop() {

@@ -25,7 +25,6 @@ import { LOG_TYPES } from './logFormat';
 import type { LogType } from './logFormat';
 import { loadModuleProgram } from '../module/loadModule';
 import type {
-  ArrayOp,
   ConnectCoreOptions,
   CoreEvent,
   ModuleConfig,
@@ -325,16 +324,6 @@ export class ConnectCore {
   /** 拉取特定数组：返回被映射的对象引用（O(1)），像原生数组一样直接使用。 */
   array<T = any>(name: string): T[] {
     return this.arrays.get<T>(name);
-  }
-
-  /** 显式深拷贝快照（需要数据隔离的场合才用）。 */
-  snapshotArray<T = any>(name: string): T[] {
-    return this.arrays.snapshot<T>(name);
-  }
-
-  /** 编辑特定数组的内容（受控操作；数组名不可改变）。 */
-  editArray(name: string, op: ArrayOp): void {
-    this.arrays.edit(name, op);
   }
 
   /** 列出所有公共数组名。 */

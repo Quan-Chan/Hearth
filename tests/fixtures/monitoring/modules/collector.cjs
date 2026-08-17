@@ -11,9 +11,9 @@ module.exports = {
     const idx = latest.findIndex((x) => x.name === m.name);
     if (idx >= 0) {
       // 同名指标：更新（set 覆盖）
-      ctx.editArray('metrics:latest', { type: 'set', index: idx, value: { name: m.name, value: m.value, at: Date.now() } });
+      ctx.array('metrics:latest')[idx] = { name: m.name, value: m.value, at: Date.now() };
     } else {
-      ctx.editArray('metrics:latest', { type: 'push', value: { name: m.name, value: m.value, at: Date.now() } });
+      ctx.array('metrics:latest').push({ name: m.name, value: m.value, at: Date.now() });
     }
   },
 };

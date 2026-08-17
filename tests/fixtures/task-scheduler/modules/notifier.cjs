@@ -6,6 +6,6 @@ module.exports = {
   },
   onEvent(ctx, event) {
     if (event.name !== 'task:done') return;
-    ctx.editArray('tasks:notifications', { type: 'push', value: { id: event.data.id, text: '任务 ' + event.data.name + ' 已完成' } });
+    ctx.array('tasks:notifications').push({ id: event.data.id, text: '任务 ' + event.data.name + ' 已完成' });
   },
 };

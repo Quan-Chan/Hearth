@@ -10,7 +10,7 @@
 | 需求 | 实现 |
 | --- | --- |
 | 事件是纯字符串消息信号 | `CoreEvent.name` 为字符串信号（如 `core:startup`），支持精确匹配与通配符（`*`、`?`）比对 |
-| 公共数组：公开、可拉取/编辑、不能改名 | **映射语义**：公开 = 把数组对象映射到名字（存引用）；`array()` 返回实时引用，像原生数组一样使用；一次修改处处有效；公开者消失（模块停止）数组自动消失；数组名不可变 |
+| 公共数组：公开、可拉取、不能改名 | **映射语义**：公开 = 把数组对象映射到名字（存引用）；`array()` 返回实时引用，像原生数组一样使用；公开者消失（模块停止）数组自动消失；数组名不可变 |
 | 模块 = 可被加载的程序，靠 YAML 启动 | 模块 = YAML 配置 + 程序文件（`.cjs/.js/.mjs/.ts`），YAML 声明 `startEvents`（出现即启动）与 `listen`（出现即向其发送事件消息） |
 | 核心方法：启动/关闭模块、发送事件 | `startModule / stopModule / sendEvent` |
 | 核心自产事件 | `core:startup`（核心启动）、`core:shutdown`（核心关闭） |
@@ -34,7 +34,7 @@ node dist/cli.js examples/basic/connect-core.yaml
 import { startCore } from './src/index';
 const core = await startCore({ moduleDir: './examples/basic/modules' });
 await core.sendEvent('echo', { text: '世界' });
-console.log(core.pullArray('greetings')); // ['你好, 世界!']
+console.log(core.array('greetings')); // ['你好, 世界!']
 await core.stop();
 ```
 ```
@@ -70,7 +70,7 @@ module.exports = {
   },
   async onEvent(ctx, event) {  // 核心向模块发送事件消息时调用
     if (event.name === 'greet') {
-      ctx.editArray('greetings', { type: 'push', value: '你好, ' + event.data.name + '!' });
+      ctx.array('greetings').push('你好, ' + event.data.name + '!');
       ctx.sendEvent('greet:done', { name: event.data.name });  // 产生新事件（链式协作）
     }
   },
@@ -86,12 +86,9 @@ module.exports = {
 | `ctx.exposeArray(name, initial?)` | 公开数组（同拥有者重新公开 = 重置内容） |
 | `ctx.unexposeArray(name)` | 取消公开数组（仅拥有者） |
 | `ctx.array(name)` | 拉取特定数组：返回被映射对象引用（O(1)），原生数组语法，一次修改处处有效 |
-| `ctx.snapshotArray(name)` | 显式深拷贝快照（需要数据隔离时用） |
-| `ctx.editArray(name, op)` | 编辑特定数组内容（受控操作，改同一对象；不能改名） |
 | `ctx.sendEvent(name, data?)` | 产生事件消息 |
 | `ctx.log(...)` / `ctx.config` | 模块日志 / YAML 配置 |
 
-数组编辑操作：`push / pop / shift / unshift / set / removeAt / removeValue / splice / clear / apply`。
 
 ## 4. 事件流水日志
 
@@ -125,12 +122,12 @@ module.exports = {
 
 测试策略：先分析框架能做什么（事件驱动插件化），再选取依赖这些能力的真实软件形态，把它们构建在框架之上进行端到端验证。
 
-**53 个测试用例全部通过**（`npm test`）：
+**63 个测试用例全部通过**（`npm test`）：
 
 | 层级 | 文件 | 覆盖 |
 | --- | --- | --- |
-| 单元 | `tests/unit/`（5 文件，28 用例） | 事件匹配器、公共数组注册表、事件流水日志、YAML 解析、模块加载 |
-| 集成 | `tests/integration/`（3 文件，15 用例） | 核心生命周期、事件路由、失败隔离、YAML 热加载（新增/更新/删除/非法）、公共数组跨模块 |
+| 单元 | `tests/unit/`（6 文件，36 用例） | 事件匹配器、公共数组注册表、事件流水日志、YAML 解析、模块加载、日志格式 |
+| 集成 | `tests/integration/`（3 文件，17 用例） | 核心生命周期、事件路由、失败隔离、YAML 热加载（新增/更新/删除/非法）、公共数组跨模块 |
 | 应用 | `tests/apps/`（5 文件，10 用例） | 见下表 |
 
 **构建在框架上的真实软件（即测试载体）：**
@@ -157,29 +154,24 @@ tests/
   apps/               # 真实软件测试（聊天机器人/任务调度器/智能家居/监控告警）
   fixtures/           # 各应用的模块夹具
 examples/basic/       # 演示：最小可用整机
+  modules/            # 模块 YAML + 程序（echo / greeter）
+  demo.cjs            # 演示脚本（npm run demo）
+examples/web-demo/    # 演示：网页控制台（数据工坊，npm run demo:web）
+  modules/            # 模块 YAML + 程序（collector / processor / reporter / alarm / notifier）
+  server.cjs          # HTTP 服务器 + 网页控制
+  public/index.html   # 控制页面
 ```
-
-## 6.5 分布式胶水层演示（模块获得跨进程能力，核心无感）
-
-```bash
-npm run demo:site-a   # 订单中心 http://127.0.0.1:3091
-npm run demo:site-b   # 执行中心 http://127.0.0.1:3092
-```
-
-两个站点各自是独立的 Connect-Core 实例，`bridge` 胶水层模块（配置驱动）负责互联：
-- `forward`：本地事件 POST 到远端（远端桥接模块注入其事件总线，业务模块无感）
-- `mirror`：定期拉取远端数组，全量镜像到本地数组
-
-在订单中心页面点"发出新订单"：订单经 bridge 转发到执行中心 → 执行后回执经 bridge 转回 → 审计登记；两端的 `mirror:*` 数组实时互见。**业务模块没有任何网络代码**——分布式能力完全来自胶水层模块。
 
 ## 7. 常用命令
 
 ```bash
 npm run typecheck     # 类型检查
 npm run build         # 编译到 dist/
-npm test              # 全量测试（53 用例）
+npm test              # 全量测试（63 用例）
 npm run test:unit     # 仅单元
 npm run test:integration
 npm run test:apps
+npm run demo          # 最小整机演示（examples/basic）
+npm run demo:web      # 网页演示（http://127.0.0.1:3081）
 npm start             # 用 node dist/cli.js 启动（读当前目录 connect-core.yaml）
 ```

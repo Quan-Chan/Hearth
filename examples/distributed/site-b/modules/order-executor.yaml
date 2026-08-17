@@ -1,6 +1,0 @@
-name: order-executor
-file: ./order-executor.cjs
-startEvents:
-  - "core:startup"
-listen:
-  - "order:sync"

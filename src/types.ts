@@ -15,20 +15,6 @@ export interface CoreEvent {
   data?: unknown;
 }
 
-/** 公共数组的结构化编辑操作（不能改变数组名，只能改内容）。 */
-export type ArrayOp =
-  | { type: 'push'; value?: unknown; values?: unknown[] }
-  | { type: 'pop' }
-  | { type: 'shift' }
-  | { type: 'unshift'; value: unknown }
-  | { type: 'set'; index: number; value: unknown }
-  | { type: 'removeAt'; index: number }
-  | { type: 'removeValue'; value: unknown }
-  | { type: 'splice'; index: number; deleteCount?: number; insert?: unknown[] }
-  | { type: 'clear' }
-  /** 高级：直接对数组应用变换函数（进程内可用）。 */
-  | { type: 'apply'; fn: (arr: unknown[]) => unknown[] };
-
 /** 模块 YAML 配置文件解析后的形态。 */
 export interface ModuleConfig {
   /** 模块名（全局唯一，作为模块身份标识） */

@@ -5,10 +5,9 @@
  *   2. 公开数组        -> exposeArray（把模块自己的数组对象映射到名字）
  *   3. 取消公开数组    -> unexposeArray
  *   4. 拉取特定数组    -> array（返回被映射对象引用，原生数组语法，一次修改处处有效）
- *   5. 编辑特定数组    -> editArray（受控操作，改的是同一对象）
  */
 import type { ConnectCore } from './ConnectCore';
-import type { ArrayOp, ModuleConfig } from '../types';
+import type { ModuleConfig } from '../types';
 
 export class ModuleContext {
   /** 模块名 */
@@ -41,16 +40,6 @@ export class ModuleContext {
   /** 拉取特定数组：返回被映射的对象引用，像原生数组一样直接使用。 */
   array<T = any>(name: string): T[] {
     return this.core.array<T>(name);
-  }
-
-  /** 显式深拷贝快照（需要数据隔离时用）。 */
-  snapshotArray<T = any>(name: string): T[] {
-    return this.core.snapshotArray<T>(name);
-  }
-
-  /** 编辑特定数组的内容（受控操作；数组名不可改变）。 */
-  editArray(name: string, op: ArrayOp): void {
-    this.core.editArray(name, op);
   }
 
   /** 模块自有日志（显式请求核心记录，写入事件流水，type=module-log）。 */

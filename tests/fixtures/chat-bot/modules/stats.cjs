@@ -7,6 +7,6 @@ module.exports = {
   onEvent(ctx) {
     const stats = ctx.array('chat:stats');
     const idx = stats.findIndex((s) => s.key === 'events');
-    ctx.editArray('chat:stats', { type: 'set', index: idx, value: { key: 'events', count: stats[idx].count + 1 } });
+    ctx.array('chat:stats')[idx] = { key: 'events', count: stats[idx].count + 1 };
   },
 };

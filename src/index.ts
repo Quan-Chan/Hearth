@@ -5,14 +5,13 @@
 export { ConnectCore } from './core/ConnectCore';
 export { ModuleContext } from './core/ModuleContext';
 export { EventStreamLog } from './core/EventStreamLog';
-export { ArrayRegistry, applyOp } from './core/ArrayRegistry';
+export { ArrayRegistry } from './core/ArrayRegistry';
 export { eventMatches, anyEventMatches, patternToRegExp } from './core/EventMatcher';
 export { ConfigWatcher, parseModuleConfig } from './core/ConfigWatcher';
 export { LOG_TYPES, categoryOf, formatLogEntry } from './core/logFormat';
 export type { LogType, LogCategory } from './core/logFormat';
 export { loadModuleProgram } from './module/loadModule';
 export type {
-  ArrayOp,
   ConnectCoreOptions,
   CoreEvent,
   LogEntry,

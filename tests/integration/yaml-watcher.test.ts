@@ -8,12 +8,12 @@ import { mkTmpDir, rmDir, waitFor, yamlFor } from '../helpers';
 const GREETER = `module.exports = {
   name: 'greeter',
   start(ctx) { ctx.exposeArray('greet:out', []); },
-  onEvent(ctx, event) { ctx.editArray('greet:out', { type: 'push', value: event.name }); },
+  onEvent(ctx, event) { ctx.array('greet:out').push(event.name); },
 };
 `;
 const LATE = `module.exports = {
   name: 'late',
-  onEvent(ctx, event) { ctx.editArray('late:marks', { type: 'push', value: event.name }); },
+  onEvent(ctx, event) { ctx.array('late:marks').push(event.name); },
   start(ctx) { ctx.exposeArray('late:marks', ['late-started']); },
 };
 `;

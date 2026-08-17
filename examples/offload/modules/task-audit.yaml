@@ -1,6 +1,0 @@
-name: task-audit
-file: ./task-audit.cjs
-startEvents:
-  - "core:startup"
-listen:
-  - "task:done"

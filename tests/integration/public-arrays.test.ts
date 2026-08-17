@@ -103,23 +103,19 @@ test('模块停止：其公开数组自动消失，不留残档；重启后是�
   }
 });
 
-test('核心直接操作公共数组（受控编辑 + 快照）', async () => {
+test('核心直接操作公共数组（原生引用操作，数组操作不记日志）', async () => {
   const dir = mkTmpDir('arr');
   try {
     makeDir(dir);
     const core = new ConnectCore({ moduleDir: dir, watch: false });
     await core.start();
     core.exposeArray('admin:list', 'admin', ['a', 'b', 'c']);
-    core.editArray('admin:list', { type: 'removeAt', index: 1 });
-    core.editArray('admin:list', { type: 'unshift', value: 'z' });
-    core.editArray('admin:list', { type: 'push', values: ['d', 'e'] });
+    core.array('admin:list').splice(1, 1);
+    core.array('admin:list').unshift('z');
+    core.array('admin:list').push('d', 'e');
     assert.deepEqual(core.array('admin:list'), ['z', 'a', 'c', 'd', 'e']);
-    // 快照隔离
-    const snap = core.snapshotArray('admin:list');
-    snap.length = 0;
-    assert.deepEqual(core.array('admin:list'), ['z', 'a', 'c', 'd', 'e']);
-    // 编辑不存在的数组抛错
-    assert.throws(() => core.editArray('nope', { type: 'push', value: 1 }), /不存在/);
+    // 拉取不存在的数组抛错
+    assert.throws(() => core.array('nope'), /不存在/);
     // 数组操作不产生任何日志（高频编辑不会爆日志）
     const arrayLogs = core.log.all().filter((e) => String(e.type).startsWith('array'));
     assert.equal(arrayLogs.length, 0);
