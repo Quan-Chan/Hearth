@@ -43,14 +43,17 @@ interface ModuleSlot {
   error?: string;
 }
 
-/** 核心 CLI 命令面：保留给可选 cli 模块的管理指令（指令即事件，事件名即命令）。 */
-const CLI_COMMANDS = new Set<string>([
-  'core:cli:start-module',
-  'core:cli:stop-module',
-  'core:cli:send-event',
-  'core:cli:state',
-  'core:cli:stop-core',
-]);
+/** CLI 请求协议（约定式）：事件 = 门铃，数组 = 内容。
+ *  - cli:commands（CLI 拥有）：指令内容条目 [{ id, cmd, args, status }]
+ *  - cli:request  事件（带 id）：请求门铃 —— 核心收到后从 cli:commands 取该 id 的指令执行
+ *  - core:results（核心拥有）：执行结果条目 [{ id, cmd, ok, result, error }]
+ *  - cli:done     事件（带 id）：完成门铃 —— CLI 收到后从 core:results 取对应结果
+ * 数组名是双方约定（不放进事件），事件只负责响铃与携带 id 用于对应。
+ */
+const CLI_REQUEST_EVENT = 'cli:request';
+const CLI_DONE_EVENT = 'cli:done';
+const CLI_COMMANDS_ARRAY = 'cli:commands';
+const CORE_RESULTS_ARRAY = 'core:results';
 
 /** 模块启动原因 -> 人类可读描述。 */
 function describeStartReason(reason?: string): string {
@@ -134,6 +137,8 @@ export class ConnectCore {
       await this.stopModule(m.name);
     }
     await this.watcher?.stop();
+    // 核心自己的公开数组（如 core:results 结果信箱）随之消失
+    this.arrays.removeOwner('core');
     this.startedFlag = false;
     this.writeLog(LOG_TYPES.CORE_STOP, 'core', '核心关闭');
     await this.log.close();
@@ -227,9 +232,9 @@ export class ConnectCore {
     }
     const event: CoreEvent = { name, data };
 
-    // CLI 指令拦截：core:cli:* 是核心自己的命令面（不进普通事件路由，不记入 occurred）
-    if (CLI_COMMANDS.has(name)) {
-      await this.handleCliCommand(source, event);
+    // CLI 请求门铃拦截：cli:request 是核心自己的协议事件（不进普通事件路由，不记入 occurred）
+    if (name === CLI_REQUEST_EVENT) {
+      await this.handleCliRequest(source, event);
       return;
     }
 
@@ -270,93 +275,121 @@ export class ConnectCore {
     }
   }
 
-  // ==================== CLI 命令面（响应可选 cli 模块的管理请求） ====================
+  // ==================== CLI 请求协议（门铃 + 数组） ====================
 
   /**
-   * 处理 core:cli:* 管理指令（指令即事件，由 sendEvent 拦截后调用）。
-   * 只做核心自己该做的事；展示/交互等高级功能全部留在 cli 模块端实现。
+   * 处理 CLI 请求（门铃协议，由 sendEvent 拦截 cli:request 后调用）：
+   *  ① 从 cli:commands（CLI 拥有的公开数组）取对应 id 的指令内容；
+   *  ② 执行指令（事件/启动/关闭/定向发送/查询/退出）；
+   *  ③ 把执行结果写入 core:results（核心自己的公开数组）；
+   *  ④ 广播 cli:done 完成门铃，CLI 收到后自己从 core:results 取结果。
+   * 事件里只带 id（用于对应），数组名是双方约定；展示/交互等高级功能全在 cli 模块端。
    */
-  private async handleCliCommand(source: string, event: CoreEvent): Promise<void> {
-    const d = (event.data ?? {}) as Record<string, unknown>;
-    const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
-    const running = (m: ModuleSlot): boolean => m.status === 'running' && !!m.def?.onEvent;
+  private async handleCliRequest(source: string, event: CoreEvent): Promise<void> {
+    // 结果信箱惰性创建：只有真的用到 CLI 协议时才出现，普通核心保持零污染
+    if (!this.arrays.has(CORE_RESULTS_ARRAY)) this.exposeArray(CORE_RESULTS_ARRAY, 'core', []);
+    const reqId = (event.data as Record<string, unknown> | undefined)?.id;
+    const commands = this.arrays.get<Record<string, unknown>>(CLI_COMMANDS_ARRAY);
+    const entry = reqId !== undefined
+      ? commands.find((c) => c.id === reqId)
+      : commands.find((c) => c.status !== 'done' && c.status !== 'error');
+    if (!entry) {
+      this.writeLog(LOG_TYPES.ERROR, 'core', 'CLI 请求未找到对应指令条目', { event: CLI_REQUEST_EVENT, id: reqId });
+      return;
+    }
+    const cmd = String(entry.cmd ?? '');
+    const args = (entry.args ?? {}) as Record<string, unknown>;
+    this.writeLog(LOG_TYPES.CLI_COMMAND, source, 'CLI 指令: ' + cmd, { command: cmd, id: entry.id });
 
-    switch (event.name) {
-      case 'core:cli:start-module': {
-        const name = str(d.name);
-        if (!name) throw new Error('cli:start-module 需要参数 name');
-        this.writeLog(LOG_TYPES.CLI_COMMAND, source, 'CLI 指令: 启动模块', { command: 'start-module', module: name });
-        await this.startModule(name, 'cli');
-        break;
-      }
-      case 'core:cli:stop-module': {
-        const name = str(d.name);
-        if (!name) throw new Error('cli:stop-module 需要参数 name');
-        this.writeLog(LOG_TYPES.CLI_COMMAND, source, 'CLI 指令: 关闭模块', { command: 'stop-module', module: name });
-        await this.stopModule(name);
-        break;
-      }
-      case 'core:cli:send-event': {
-        // 定向发送：无论目标模块是否声明了 listen，都直接把事件信息送达；
-        // targets === '*' 时发送给所有运行中的模块。
-        const eventName = str(d.name);
-        if (!eventName) throw new Error('cli:send-event 需要参数 name');
-        const targets = d.targets;
-        const all = targets === undefined || targets === null || targets === '*';
-        const wanted = all
-          ? null
-          : (Array.isArray(targets)
-              ? targets.map(String)
-              : String(targets).split(',').map((s) => s.trim()).filter(Boolean));
-        const recipients = all
-          ? [...this.modules.values()].filter(running)
-          : wanted!.map((nm) => this.modules.get(nm)).filter((m): m is ModuleSlot => !!m && running(m));
-        const payload: CoreEvent = { name: eventName, data: d.data };
-        if (recipients.length === 0) {
-          this.writeLog(LOG_TYPES.EVENT_DROP, source, eventName, {
-            event: eventName,
-            data: d.data,
-            note: 'cli 定向发送: 无有效接收模块（目标未运行/不存在）',
-          });
+    const running = (m: ModuleSlot): boolean => m.status === 'running' && !!m.def?.onEvent;
+    const result: Record<string, unknown> = { id: entry.id, cmd };
+    try {
+      switch (cmd) {
+        case 'ping':
+          result.result = 'pong';
+          break;
+        case 'event': {
+          const name = String(args.name ?? '');
+          if (!name) throw new Error('event 指令缺少 name');
+          await this.sendEvent(name, args.data, source);
+          result.result = { delivered: name };
           break;
         }
-        this.writeLog(LOG_TYPES.EVENT, source, eventName, {
-          event: eventName,
-          data: d.data,
-          recipients: recipients.map((m) => m.name),
-          directed: true,
-        });
-        for (const m of recipients) {
-          try {
-            await m.def!.onEvent!(m.ctx!, payload);
-          } catch (err) {
-            this.writeLog(LOG_TYPES.ERROR, m.name, '处理定向事件失败: ' + (err instanceof Error ? err.message : String(err)), {
-              event: eventName,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
+        case 'start': {
+          const name = String(args.module ?? '');
+          if (!name) throw new Error('start 指令缺少 module');
+          await this.startModule(name, 'cli');
+          result.result = { module: name, status: this.modules.get(name)?.status };
+          break;
         }
-        break;
+        case 'stop': {
+          const name = String(args.module ?? '');
+          if (!name) throw new Error('stop 指令缺少 module');
+          await this.stopModule(name);
+          result.result = { module: name, status: this.modules.get(name)?.status, removedArrays: this.log.byType('module-stop').filter((l) => l.module === name).pop()?.removedArrays };
+          break;
+        }
+        case 'send': {
+          // 定向发送：无论目标模块是否声明了 listen，都直接把事件信息送达；targets '*' = 广播
+          const name = String(args.name ?? '');
+          if (!name) throw new Error('send 指令缺少 name');
+          const targets = args.targets;
+          const all = targets === undefined || targets === null || targets === '*';
+          const wanted = all
+            ? null
+            : (Array.isArray(targets)
+                ? targets.map(String)
+                : String(targets).split(',').map((s) => s.trim()).filter(Boolean));
+          const recipients = all
+            ? [...this.modules.values()].filter(running)
+            : wanted!.map((nm) => this.modules.get(nm)).filter((m): m is ModuleSlot => !!m && running(m));
+          const payload: CoreEvent = { name, data: args.data };
+          if (recipients.length === 0) {
+            this.writeLog(LOG_TYPES.EVENT_DROP, source, name, { event: name, data: args.data, note: 'cli 定向发送: 无有效接收模块' });
+          } else {
+            this.writeLog(LOG_TYPES.EVENT, source, name, { event: name, data: args.data, recipients: recipients.map((m) => m.name), directed: true });
+            for (const m of recipients) {
+              try {
+                await m.def!.onEvent!(m.ctx!, payload);
+              } catch (err) {
+                this.writeLog(LOG_TYPES.ERROR, m.name, '处理定向事件失败: ' + (err instanceof Error ? err.message : String(err)), {
+                  event: name,
+                  error: err instanceof Error ? err.message : String(err),
+                });
+              }
+            }
+          }
+          result.result = { recipients: recipients.map((m) => m.name) };
+          break;
+        }
+        case 'state': {
+          const modules = [...this.modules.values()].map((m) => ({ name: m.name, status: m.status, startedAt: m.startedAt, error: m.error }));
+          result.result = { modules, arrays: this.arrays.list() };
+          break;
+        }
+        case 'exit': {
+          // 退出：先写结果 + 完成门铃（CLI 收到后才能读到 core:results），再停核心
+          result.ok = true;
+          result.result = { stopped: true };
+          this.arrays.get(CORE_RESULTS_ARRAY).push(result);
+          await this.sendEvent(CLI_DONE_EVENT, { id: entry.id }, 'core');
+          await this.stop();
+          return;
+        }
+        default:
+          throw new Error('未知 CLI 指令: ' + cmd);
       }
-      case 'core:cli:state': {
-        this.writeLog(LOG_TYPES.CLI_COMMAND, source, 'CLI 指令: 查询核心状态', { command: 'state' });
-        const modules = [...this.modules.values()].map((m) => ({
-          name: m.name,
-          status: m.status,
-          startedAt: m.startedAt,
-          error: m.error,
-        }));
-        const arrays = this.arrays.list();
-        // 回复是普通事件（core:cli:reply-state），走正常转发，由 cli 模块自己接收展示
-        await this.sendEvent('core:cli:reply-state', { modules, arrays }, 'core');
-        break;
-      }
-      case 'core:cli:stop-core': {
-        this.writeLog(LOG_TYPES.CLI_COMMAND, source, 'CLI 指令: 关闭核心', { command: 'stop-core' });
-        await this.stop();
-        break;
-      }
+      result.ok = true;
+    } catch (err) {
+      result.ok = false;
+      result.error = err instanceof Error ? err.message : String(err);
+      this.writeLog(LOG_TYPES.ERROR, 'core', 'CLI 指令执行失败: ' + (err instanceof Error ? err.message : String(err)), {
+        command: cmd,
+        id: entry.id,
+      });
     }
+    this.arrays.get(CORE_RESULTS_ARRAY).push(result);
+    await this.sendEvent(CLI_DONE_EVENT, { id: entry.id }, 'core');
   }
 
   // ==================== 模块配置热加载（监听模块文件夹） ====================

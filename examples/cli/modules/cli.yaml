@@ -3,6 +3,6 @@ file: ./cli.cjs
 startEvents:
   - "core:startup"
 listen:
-  - "core:cli:reply-state"
+  - "cli:done"
 config:
   logFile: ../logs/event-stream.log

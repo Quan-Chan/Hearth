@@ -122,12 +122,12 @@ module.exports = {
 
 测试策略：先分析框架能做什么（事件驱动插件化），再选取依赖这些能力的真实软件形态，把它们构建在框架之上进行端到端验证。
 
-**69 个测试用例全部通过**（`npm test`）：
+**72 个测试用例全部通过**（`npm test`）：
 
 | 层级 | 文件 | 覆盖 |
 | --- | --- | --- |
 | 单元 | `tests/unit/`（6 文件，31 用例） | 事件匹配器、公共数组注册表、事件流水日志、YAML 解析、模块加载、日志格式 |
-| 集成 | `tests/integration/`（5 文件，28 用例） | 核心生命周期、事件路由、失败隔离、YAML 热加载、公共数组跨模块、模块自改 YAML、CLI 命令面 |
+| 集成 | `tests/integration/`（5 文件，31 用例） | 核心生命周期、事件路由、失败隔离、YAML 热加载、公共数组跨模块、模块自改 YAML、CLI 门铃协议 |
 | 应用 | `tests/apps/`（5 文件，10 用例） | 见下表 |
 
 **构建在框架上的真实软件（即测试载体）：**
@@ -166,34 +166,44 @@ examples/cli/         # 演示：CLI（可选模块，npm run demo:cli）
 ```
 
 ## 6.5 CLI（可选模块）
-CLI 是一个**可选模块**（`examples/cli/modules/cli.*`）：把它放进模块目录，核心启动后你就获得一个命令行界面；不放它就完全没有 CLI。它必须与核心的 CLI 命令面联动才能工作——启动时它会发一条 `core:cli:state` 自检，核心不回应则 CLI 不可用。
+CLI 是一个**可选模块**（`examples/cli/modules/cli.*`）：把它放进模块目录，核心启动后你就获得一个命令行界面；不放它就完全没有 CLI。它必须与核心的**门铃协议**联动才能工作——启动时会提交一条 `ping` 指令自检，收不到完成门铃则 CLI 不可用。
 
 ```bash
 npm run demo:cli    # 交互式 REPL（或 node dist/cli.js examples/cli/connect-core.yaml）
 ```
 
-**核心只提供命令面（`core:cli:*` 指令即事件），界面、解析、日志展示等高级功能全部在 cli 模块端实现**——核心保持极简。
+**通信协议（约定式：事件=门铃、数组=内容）**——核心只实现协议，界面、解析、日志展示等高级功能全部在 cli 模块端。
 
-| 指令 | 作用 | 核心命令面 |
+| 步骤 | 谁 | 动作 | 载体 |
+| --- | --- | --- | --- |
+| ① | CLI | 把指令内容写入公开数组 `cli:commands`（CLI 拥有）：`{id, cmd, args, status}` | 数组 |
+| ② | CLI | 广播 `cli:request` 请求门铃（只带 `id`） | 事件 |
+| ③ | 核心 | 从 `cli:commands` 取该 id 的指令内容并执行 | 数组读取 |
+| ④ | 核心 | 把执行结果写入公开数组 `core:results`（核心拥有）：`{id, cmd, ok, result, error}` | 数组 |
+| ⑤ | 核心 | 广播 `cli:done` 完成门铃（只带 `id`） | 事件 |
+| ⑥ | CLI | 收到后从 `core:results` 取对应 id 的结果并展示 | 数组读取 |
+
+事件里只带 `id`（用于对应），**数组名是双方约定、不放进事件**；结果数据不塞进事件，CLI 自己去结果数组拉。
+| 指令 | 作用 | 传给核心的 cmd/args |
 | --- | --- | --- |
-| `event <名称> [JSON]` | 生成一个自定义事件 | 直接 `ctx.sendEvent`（普通事件通道） |
-| `start <模块>` | 开启模块（即使没有事件） | `core:cli:start-module` |
-| `stop <模块>` | 关闭模块 | `core:cli:stop-module` |
-| `send <目标|*> <名称> [JSON]` | 定向发送事件（目标无需监听；`*` 广播） | `core:cli:send-event` |
-| `state` | 查看模块与公共数组（回复 `core:cli:reply-state`） | `core:cli:state` |
-| `log [过滤词] [条数]` | 查看日志时间线（CLI 自己读 JSONL 文件 grep，核心不参与） | — |
-| `help` / `exit` | 帮助 / 优雅关闭（`core:cli:stop-core`） | — |
+| `event <名称> [JSON]` | 生成一个自定义事件 | `{cmd:'event', args:{name, data}}` |
+| `start <模块>` | 开启模块（即使没有事件） | `{cmd:'start', args:{module}}` |
+| `stop <模块>` | 关闭模块 | `{cmd:'stop', args:{module}}` |
+| `send <目标|*> <名称> [JSON]` | 定向发送事件（目标无需监听；`*` 广播） | `{cmd:'send', args:{targets, name, data}}` |
+| `state` | 查看模块与公共数组（内容由 CLI 自己 `ctx.array()` 拉） | `{cmd:'state'}` |
+| `log [过滤词] [条数]` | 查看日志时间线（CLI 自己读 JSONL 文件 grep，核心不参与） | —（CLI 端） |
+| `help` / `exit` | 帮助 / 优雅关闭 | `{cmd:'exit'}` → 核心停止 |
 
-**响应的两种模式**（不把所有东西塞进事件）：
-- (a) 模块只广播"已完成/有信息"信号事件（如 echo 处理完广播 `echo:done`）；
-- (b) 实际内容放公开数组（如 `echo:out`），CLI 或其他模块用 `ctx.array()` 自己拉取——`state` 命令只回名字/状态，内容由 cli 模块拉。
+**响应的两种模式**（CLI 与核心之间、模块之间通用）：
+- (a) 事件 = 门铃：只广播"已完成/有信息/有请求"这类信号（如 `cli:request`/`cli:done`、echo 的 `echo:done`），载荷极轻；
+- (b) 数组 = 内容：真正的数据放公开数组（如 `core:results`/`echo:out`），接收方用 `ctx.array()` 自己拉取，不把大块内容塞进事件。
 
 ## 7. 常用命令
 
 ```bash
 npm run typecheck     # 类型检查
 npm run build         # 编译到 dist/
-npm test              # 全量测试（69 用例）
+npm test              # 全量测试（72 用例）
 npm run test:unit     # 仅单元
 npm run test:integration
 npm run test:apps
