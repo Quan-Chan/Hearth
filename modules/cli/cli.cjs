@@ -250,7 +250,13 @@ module.exports = {
       if (rl) rl.close();
     }, 2000);
     setImmediate(() => {
-      if (!exiting) pingId = submit(ctx, 'ping', {});
+      if (exiting) return;
+      // 关键：pingId 必须在响应门铃【前】固定——sendEvent 派发后核心可能立即回 cli:done，
+      // 若用 pingId = submit(...) 的返回值，赋值会晚于 onDone 的执行，联动判定将失配。
+      const id = ++seq;
+      pingId = id;
+      ctx.array(ARRAY_CMDS).push({ id, cmd: 'ping', args: {}, status: 'pending', at: Date.now() });
+      ctx.sendEvent(EV_REQUEST, { id }).catch((err) => console.log('✖ 提交指令失败: ' + (err && err.message ? err.message : err)));
     });
 
     rl.on('line', (line) => {
