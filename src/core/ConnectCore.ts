@@ -279,35 +279,31 @@ export class ConnectCore {
 
   /**
    * 处理 CLI 请求（门铃协议，由 sendEvent 拦截 cli:request 后调用）：
-   *  ① 从 cli:commands（CLI 拥有的公开数组）取对应 id 的指令内容；
-   *  ② 执行指令（事件/启动/关闭/定向发送/查询/退出）；
+   *  ① 从 cli:commands（CLI 拥有的公开数组）取第一条未处理的指令；
+   *  ② 执行它（事件/启动/关闭/定向发送/查询/退出），并把该条目标记为已处理；
    *  ③ 把执行结果写入 core:results（核心自己的公开数组）；
-   *  ④ 广播 cli:done 完成门铃，CLI 收到后自己从 core:results 取结果。
-   * 事件里只带 id（用于对应），数组名是双方约定；展示/交互等高级功能全在 cli 模块端。
+   *  ④ 广播 cli:done 完成门铃，CLI 收到后自己读 core:results 的最新一条来展示。
+   * 终端是串行的，无需 id 关联：事件只当门铃，内容/结果全走数组。
    */
   private async handleCliRequest(source: string, event: CoreEvent): Promise<void> {
     // 结果信箱惰性创建：只有真的用到 CLI 协议时才出现，普通核心保持零污染
     if (!this.arrays.has(CORE_RESULTS_ARRAY)) this.exposeArray(CORE_RESULTS_ARRAY, 'core', []);
-    const reqId = (event.data as Record<string, unknown> | undefined)?.id;
+
     const commands = this.arrays.get<Record<string, unknown>>(CLI_COMMANDS_ARRAY);
-    const entry = reqId !== undefined
-      ? commands.find((c) => c.id === reqId)
-      : commands.find((c) => c.status !== 'done' && c.status !== 'error');
+    const entry = commands.find((c) => c.status !== 'done' && c.status !== 'error');
     if (!entry) {
-      this.writeLog(LOG_TYPES.ERROR, 'core', 'CLI 请求未找到对应指令条目', { event: CLI_REQUEST_EVENT, id: reqId });
+      this.writeLog(LOG_TYPES.ERROR, 'core', 'CLI 请求到达但 cli:commands 里没有待执行指令', { event: CLI_REQUEST_EVENT });
       return;
     }
+
     const cmd = String(entry.cmd ?? '');
     const args = (entry.args ?? {}) as Record<string, unknown>;
-    this.writeLog(LOG_TYPES.CLI_COMMAND, source, 'CLI 指令: ' + cmd, { command: cmd, id: entry.id });
+    this.writeLog(LOG_TYPES.CLI_COMMAND, source, 'CLI 指令: ' + cmd, { command: cmd });
 
     const running = (m: ModuleSlot): boolean => m.status === 'running' && !!m.def?.onEvent;
-    const result: Record<string, unknown> = { id: entry.id, cmd };
+    const result: Record<string, unknown> = { cmd };
     try {
       switch (cmd) {
-        case 'ping':
-          result.result = 'pong';
-          break;
         case 'event': {
           const name = String(args.name ?? '');
           if (!name) throw new Error('event 指令缺少 name');
@@ -326,7 +322,7 @@ export class ConnectCore {
           const name = String(args.module ?? '');
           if (!name) throw new Error('stop 指令缺少 module');
           await this.stopModule(name);
-          result.result = { module: name, status: this.modules.get(name)?.status, removedArrays: this.log.byType('module-stop').filter((l) => l.module === name).pop()?.removedArrays };
+          result.result = { module: name, status: this.modules.get(name)?.status };
           break;
         }
         case 'send': {
@@ -372,7 +368,7 @@ export class ConnectCore {
           result.ok = true;
           result.result = { stopped: true };
           this.arrays.get(CORE_RESULTS_ARRAY).push(result);
-          await this.sendEvent(CLI_DONE_EVENT, { id: entry.id }, 'core');
+          await this.sendEvent(CLI_DONE_EVENT, {}, 'core');
           await this.stop();
           return;
         }
@@ -380,16 +376,15 @@ export class ConnectCore {
           throw new Error('未知 CLI 指令: ' + cmd);
       }
       result.ok = true;
+      entry.status = 'done';
     } catch (err) {
       result.ok = false;
       result.error = err instanceof Error ? err.message : String(err);
-      this.writeLog(LOG_TYPES.ERROR, 'core', 'CLI 指令执行失败: ' + (err instanceof Error ? err.message : String(err)), {
-        command: cmd,
-        id: entry.id,
-      });
+      entry.status = 'error';
+      this.writeLog(LOG_TYPES.ERROR, 'core', 'CLI 指令执行失败: ' + (err instanceof Error ? err.message : String(err)), { command: cmd });
     }
     this.arrays.get(CORE_RESULTS_ARRAY).push(result);
-    await this.sendEvent(CLI_DONE_EVENT, { id: entry.id }, 'core');
+    await this.sendEvent(CLI_DONE_EVENT, {}, 'core');
   }
 
   // ==================== 模块配置热加载（监听模块文件夹） ====================
