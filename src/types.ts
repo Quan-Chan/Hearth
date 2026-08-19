@@ -61,6 +61,8 @@ export interface ConnectCoreOptions {
   watch?: boolean;
   /** 监听轮询间隔 ms，默认 200 */
   pollIntervalMs?: number;
+  /** 事件比对索引（MatchIndex）的字节预算：空间换时间的上限，默认 8MB（≈8000 个条件入索引，超出进溢出表） */
+  indexBudgetBytes?: number;
   /** 是否把日志同步输出到控制台，默认 false */
   logToConsole?: boolean;
 }

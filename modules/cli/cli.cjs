@@ -75,6 +75,7 @@ function helpText() {
     '  stop <模块>                  关闭模块',
     '  send <目标|*> <名称> [JSON]  定向发送事件（目标=模块名，逗号分隔；* 广播）',
     '  state                        查看模块与公共数组',
+    '  index [budget <MB>]          查看比对索引状态 / 修改索引内存预算',
     '  log [过滤词] [条数]          查看日志时间线（读文件 grep）',
     '  help / exit',
   ].join('\n');
@@ -122,6 +123,18 @@ function run(ctx, line) {
       ask(ctx, 'state', {});
       console.log('→ 已提交 state');
       break;
+    case 'index': {
+      if (parts[1] === 'budget') {
+        const mb = parts[2];
+        if (!mb || !/^\d+(\.\d+)?$/.test(mb)) return console.log('用法: index budget <MB>');
+        ask(ctx, 'index', { action: 'budget', mb: parseFloat(mb) });
+        console.log('→ 已提交 index budget ' + mb + 'MB');
+      } else {
+        ask(ctx, 'index', { action: 'view' });
+        console.log('→ 已提交 index（查询比对索引状态）');
+      }
+      break;
+    }
     case 'log':
       showLog(ctx, parts[1] || null, parts[2] ? parseInt(parts[2], 10) : 0);
       break;
@@ -181,6 +194,19 @@ module.exports = {
           console.log('  数组 ' + name + ' = ' + items);
         }
       }
+    } else if (result.cmd === 'index') {
+      const r = result.result || {};
+      console.log('--- 比对索引 ---');
+      console.log('  预算 ' + Math.round((r.budgetBytes || 0) / 1024) + ' KB');
+      for (const [kind, s] of Object.entries({ start: r.start, listen: r.listen })) {
+        if (!s) continue;
+        console.log(
+          '  ' + kind + ': 已用 ' + Math.round(s.usedBytes / 1024) + ' KB, 索引 ' + s.indexedPatterns +
+          ' 条件 (精确 ' + s.exactPatterns + ' / 桶 ' + s.bucketPatterns + ' / 全局 ' + s.globalPatterns +
+          ', ' + s.buckets + ' 桶), 溢出 ' + s.overflowPatterns,
+        );
+      }
+      if (r.updated) console.log('  (预算已更新并重建索引)');
     } else if (result.cmd === 'exit') {
       // 核心正在关闭；stop() 里负责退出进程
     } else {

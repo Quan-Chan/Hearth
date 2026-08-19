@@ -166,6 +166,52 @@ test('cli:commands 为空时 cli:request 不执行、不崩溃', async () => {
   } finally { rmDir(dir); }
 });
 
+test('index 指令：查看比对索引状态', async () => {
+  const dir = mkTmpDir('cli');
+  try {
+    makeDir(dir);
+    const core = new ConnectCore({ moduleDir: dir, watch: false, indexBudgetBytes: 2 * 1024 * 1024 });
+    await core.start();
+    setup(core);
+    await ask(core, 'index', { action: 'view' });
+    const r = lastResult(core).result;
+    assert.equal(r.budgetBytes, 2 * 1024 * 1024);
+    assert.ok(r.start && r.listen, '应包含 start/listen 两份索引统计');
+    assert.equal(typeof r.listen.indexedPatterns, 'number');
+    assert.equal(typeof r.listen.overflowPatterns, 'number');
+    // 索引正常工作：echo 的 listen 为空，listener 监听 hello
+    await core.sendEvent('hello');
+    assert.deepEqual(core.array('listener:got'), ['hello']);
+    await core.stop();
+  } finally { rmDir(dir); }
+});
+
+test('index budget 指令：修改预算并重建索引，事件仍正确送达', async () => {
+  const dir = mkTmpDir('cli');
+  try {
+    makeDir(dir);
+    const core = new ConnectCore({ moduleDir: dir, watch: false });
+    await core.start();
+    setup(core);
+    await ask(core, 'index', { action: 'budget', mb: 1 });
+    const r = lastResult(core).result;
+    assert.equal(r.updated, true);
+    assert.equal(r.budgetBytes, 1024 * 1024);
+    // 重建后索引语义不变：通配 listen（ping:*）仍命中
+    await core.sendEvent('ping:after-budget');
+    assert.deepEqual(core.array('listener:got'), ['ping:after-budget']);
+    // 下限保护：0.01MB 被提升到 0.5MB
+    await ask(core, 'index', { action: 'budget', mb: 0.01 });
+    assert.equal(lastResult(core).result.budgetBytes, 512 * 1024);
+    // 非法输入报错，核心继续可用
+    await ask(core, 'index', { action: 'budget', mb: -5 });
+    assert.equal(lastResult(core).ok, false);
+    await core.sendEvent('hello');
+    assert.deepEqual(core.array('listener:got'), ['ping:after-budget', 'hello']);
+    await core.stop();
+  } finally { rmDir(dir); }
+});
+
 test('exit 指令：先写结果与完成门铃，再关闭核心', async () => {
   const dir = mkTmpDir('cli');
   try {

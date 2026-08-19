@@ -14,11 +14,11 @@
 | 模块 = 可被加载的程序，靠 YAML 启动 | 模块 = YAML 配置 + 程序文件（`.cjs/.js/.mjs/.ts`），YAML 声明 `startEvents`（出现即启动）与 `listen`（出现即向其发送事件消息） |
 | 核心方法：启动/关闭模块、发送事件 | `startModule / stopModule / sendEvent` |
 | 核心自产事件 | `core:startup`（核心启动）、`core:shutdown`（核心关闭） |
-| 比对事件 | 每个事件到达时：①未运行的模块若 `startEvents` 匹配则启动；②运行中的模块若 `listen` 匹配则向其发送事件消息 |
-| 监听模块文件夹 | `ConfigWatcher` 轮询模块目录，YAML 新增→加载、变化→更新并重启模块、删除→停止并移除 |
+| 比对事件 | 每个事件到达时：①未运行的模块若 `startEvents` 匹配则启动；②运行中的模块若 `listen` 匹配则向其发送事件消息。比对走 `MatchIndex`（精确表 + 前缀桶 + 溢出表，字节预算上限默认 8MB），从"与全部条件比对"变为"只测命中桶" |
+| 监听模块文件夹 | `ConfigWatcher` 轮询模块目录（只识别本层与『每模块一个子文件夹』，**不递归**），YAML 新增→加载、变化→更新并重启模块、删除→停止并移除 |
 | 日志：记录核心自己干的事情（事件流水） | `EventStreamLog` JSONL 落盘，三字段 `{type, source, message}`：类型（核心的动作）/ 来源 / 信息；只记事件收发、模块启停、配置加载、模块日志与错误，数组操作不记（防高频爆日志） |
 
-**模块间通信被严格限制**：只能通过「事件信号 + 公共数组数据」协作，不能互相直接调用 —— 模块间的 DAG 由事件涌现产生，核心因此保持极小。
+**模块间协作推荐走「事件信号 + 公共数组数据」**——这不是强制：模块是自由的程序，仍可用文件、网络、子进程等任何外部通道自行协作。推荐让协作尽量依赖事件/数组，是为了让模块间的 DAG 由事件涌现产生、核心因此保持极小。
 
 ## 2. 快速开始
 
@@ -124,12 +124,12 @@ module.exports = {
 
 测试策略：先分析框架能做什么（事件驱动插件化），再选取依赖这些能力的真实软件形态，把它们构建在框架之上进行端到端验证。
 
-**72 个测试用例全部通过**（`npm test`）：
+**81 个测试用例全部通过**（`npm test`）：
 
 | 层级 | 文件 | 覆盖 |
 | --- | --- | --- |
-| 单元 | `tests/unit/`（6 文件，31 用例） | 事件匹配器、公共数组注册表、事件流水日志、YAML 解析、模块加载、日志格式 |
-| 集成 | `tests/integration/`（5 文件，31 用例） | 核心生命周期、事件路由、失败隔离、YAML 热加载、公共数组跨模块、模块自改 YAML、CLI 门铃协议 |
+| 单元 | `tests/unit/`（7 文件，37 用例） | 事件匹配器、比对索引（精确表/前缀桶/溢出表/字节预算）、公共数组注册表、事件流水日志、YAML 解析、模块加载、日志格式 |
+| 集成 | `tests/integration/`（5 文件，34 用例） | 核心生命周期、事件路由、失败隔离、YAML 热加载（stat 指纹/touch/收敛）、公共数组跨模块、模块自改 YAML、CLI 门铃协议与索引指令 |
 | 应用 | `tests/apps/`（5 文件，10 用例） | 见下表 |
 
 **构建在框架上的真实软件（即测试载体）：**
@@ -146,7 +146,7 @@ module.exports = {
 
 ```
 src/                  # 框架核心（极简中间层）
-  core/               # ConnectCore / EventMatcher / ArrayRegistry / ConfigWatcher / EventStreamLog / ModuleContext
+  core/               # ConnectCore / EventMatcher / MatchIndex / ArrayRegistry / ConfigWatcher / EventStreamLog / ModuleContext
   module/loadModule.ts# 模块程序加载器
   index.ts            # 公共入口（createCore / startCore）
   connect-core.ts     # 启动入口：启动核心（= 整机，模块按事件自动起来）
@@ -155,14 +155,15 @@ tests/
   integration/        # 集成测试
   apps/               # 真实软件测试（聊天机器人/任务调度器/智能家居/监控告警）
   fixtures/           # 各应用的模块夹具
-modules/             # 模块生态（每个模块一个文件夹，一律平级）
+modules/             # 模块生态（每模块一个文件夹；只识别本层与直接子文件夹，不递归深入）
   cli/                # 命令行界面模块（cli.yaml + cli.cjs，可选）
   …/                  # 你的更多模块（每个一个文件夹）
 connect-core.yaml     # 根配置：moduleDir: ./modules -> npm start 启动核心=整机
+benchmarks/          # 性能基准（npm run bench：事件比对 / 配置轮询 / 索引内存）
 ```
 
 ## 6.5 CLI（可选模块）
-CLI 是一个**可选模块**（`modules/cli/`）：它在模块生态里，核心启动后你就获得一个命令行界面；不放它就完全没有 CLI。它必须与核心的**门铃协议**联动才能工作——启动时会提交一条 `ping` 指令自检，收不到完成门铃则 CLI 返回"核心未响应"并退出。
+CLI 是一个**可选模块**（`modules/cli/`）：它在模块生态里，核心启动后你就获得一个命令行界面；不放它就完全没有 CLI。它与核心通过**门铃协议**（事件=门铃、数组=内容）联动工作，协议明细见下方"通信协议"一节。
 
 ```bash
 npm start    # 启动核心 == 启动整个软件（附带 CLI 命令行界面）
@@ -190,6 +191,7 @@ npm start    # 启动核心 == 启动整个软件（附带 CLI 命令行界面�
 | `stop <模块>` | 关闭模块 | `{cmd:'stop', args:{module}}` |
 | `send <目标|*> <名称> [JSON]` | 定向发送事件（目标无需监听；`*` 广播） | `{cmd:'send', args:{targets, name, data}}` |
 | `state` | 查看模块与公共数组（内容由 CLI 自己 `ctx.array()` 拉） | `{cmd:'state'}` |
+| `index [budget <MB>]` | 查看比对索引状态（预算/已用/溢出）；`budget <MB>` 修改索引内存预算并重建（默认 8MB，下限 0.5MB） | `{cmd:'index', args:{action:'view'\|'budget', mb}}` |
 | `log [过滤词] [条数]` | 查看日志时间线（CLI 自己读 JSONL 文件 grep，核心不参与） | —（CLI 端） |
 | `help` / `exit` | 帮助 / 优雅关闭 | `{cmd:'exit'}` → 核心停止 |
 
@@ -207,6 +209,7 @@ npm test              # 全量测试（72 用例）
 npm run test:unit     # 仅单元
 npm run test:integration
 npm run test:apps
+npm run bench         # 性能基准（事件比对/配置轮询/索引内存）
 npm start             # 启动核心==整机（读 connect-core.yaml，附带 CLI 界面）
 npm start             # 唯一启动入口：启动核心
 ```

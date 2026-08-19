@@ -3,4 +3,5 @@ core:
   logFile: ./logs/event-stream.log
   watch: true
   pollIntervalMs: 200
+  indexBudgetBytes: 8388608   # 事件比对索引内存预算（字节，默认 8MB，可用 CLI: index budget <MB> 调整）
   logToConsole: false

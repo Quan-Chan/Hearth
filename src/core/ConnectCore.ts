@@ -21,6 +21,8 @@ import { ArrayRegistry } from './ArrayRegistry';
 import { ConfigWatcher } from './ConfigWatcher';
 import { ModuleContext } from './ModuleContext';
 import { anyEventMatches } from './EventMatcher';
+import { MatchIndex } from './MatchIndex';
+import type { MatchIndexStats } from './MatchIndex';
 import { LOG_TYPES } from './logFormat';
 import type { LogType } from './logFormat';
 import { loadModuleProgram } from '../module/loadModule';
@@ -32,6 +34,11 @@ import type {
   ModuleRuntimeInfo,
 } from '../types';
 
+/** 事件比对索引的默认字节预算（空间换时间上限，≈8000 个条件入索引）。 */
+const DEFAULT_INDEX_BUDGET_BYTES = 8 * 1024 * 1024;
+/** CLI 修改预算的下限（防误设把索引完全关掉）。 */
+const MIN_INDEX_BUDGET_BYTES = 512 * 1024;
+
 interface ModuleSlot {
   name: string;
   config: ModuleConfig;
@@ -41,6 +48,8 @@ interface ModuleSlot {
   status: 'running' | 'stopped' | 'failed';
   startedAt?: number;
   error?: string;
+  /** 加载序号：索引查找后按此恢复与全量遍历一致的顺序 */
+  seq: number;
 }
 
 /** CLI 请求协议（约定式）：事件 = 门铃，数组 = 内容。
@@ -73,6 +82,10 @@ export class ConnectCore {
   private modules = new Map<string, ModuleSlot>();
   /** 已经出现过的事件名（用于"事件已发生则立即启动新模块"）。 */
   private occurred = new Set<string>();
+  /** 事件比对索引：startEvents 与 listen 各自一份（配置变更时重建，模块启停不碰索引）。 */
+  private startIndex = new MatchIndex<ModuleSlot>();
+  private listenIndex = new MatchIndex<ModuleSlot>();
+  private slotSeq = 0;
   private watcher?: ConfigWatcher;
   private startedFlag = false;
 
@@ -82,6 +95,7 @@ export class ConnectCore {
       logFile: path.resolve(options.logFile ?? './logs/event-stream.log'),
       watch: options.watch ?? true,
       pollIntervalMs: options.pollIntervalMs ?? 200,
+      indexBudgetBytes: options.indexBudgetBytes ?? DEFAULT_INDEX_BUDGET_BYTES,
       logToConsole: options.logToConsole ?? false,
     };
     this.log = new EventStreamLog({
@@ -234,24 +248,22 @@ export class ConnectCore {
 
     // CLI 请求门铃拦截：cli:request 是核心自己的协议事件（不进普通事件路由，不记入 occurred）
     if (name === CLI_REQUEST_EVENT) {
-      await this.handleCliRequest(source, event);
+      await this.handleCliRequest(source);
       return;
     }
 
     this.occurred.add(name);
 
-    // 1) 比对启动事件：未运行的模块若 startEvents 匹配，则启动它
-    const toStart = [...this.modules.values()].filter(
-      (m) => m.status !== 'running' && m.config.enabled && anyEventMatches(m.config.startEvents, name),
+    // 1) 比对启动事件：未运行的模块若 startEvents 匹配，则启动它（索引查找，跳过全量比对）
+    const toStart = this.dedupSorted(this.startIndex.lookup(name)).filter(
+      (m) => m.status !== 'running' && m.config.enabled,
     );
     for (const m of toStart) {
       await this.startModule(m.name, name);
     }
 
     // 2) 比对监听事件：收集匹配的监听模块，记录核心动作（转发或丢弃）
-    const listeners = [...this.modules.values()].filter(
-      (m) => m.status === 'running' && m.ctx && m.def?.onEvent && anyEventMatches(m.config.listen, name),
-    );
+    const listeners = this.dedupSorted(this.listenIndex.lookup(name)).filter((m) => this.isDeliverable(m));
     if (listeners.length === 0) {
       this.writeLog(LOG_TYPES.EVENT_DROP, source, name, { event: name, data });
     } else {
@@ -263,14 +275,37 @@ export class ConnectCore {
     }
 
     // 3) 向监听模块发送事件消息（单个模块失败不影响其他模块）
-    for (const m of listeners) {
+    await this.deliverTo(listeners, event, `处理事件 ${name} 失败: `);
+  }
+
+  // ==================== 事件派发辅助 ====================
+
+  /** 模块是否接收事件（运行中且实现了 onEvent）。 */
+  private isDeliverable(m: ModuleSlot): boolean {
+    return m.status === 'running' && !!m.def?.onEvent;
+  }
+
+  /** 索引查找可能同槽命中多次（重复条件）：去重并按加载顺序排列，保持与原全量遍历一致的顺序。 */
+  private dedupSorted(list: ModuleSlot[]): ModuleSlot[] {
+    const seen = new Set<ModuleSlot>();
+    const out: ModuleSlot[] = [];
+    for (const m of list) {
+      if (!seen.has(m)) {
+        seen.add(m);
+        out.push(m);
+      }
+    }
+    return out.sort((a, b) => a.seq - b.seq);
+  }
+
+  /** 逐个派发事件消息：单个模块失败只记 error 日志，不影响其他模块（失败隔离）。 */
+  private async deliverTo(recipients: ModuleSlot[], event: CoreEvent, failPrefix: string): Promise<void> {
+    for (const m of recipients) {
       try {
         await m.def!.onEvent!(m.ctx!, event);
       } catch (err) {
-        this.writeLog(LOG_TYPES.ERROR, m.name, `处理事件 ${name} 失败: ${err instanceof Error ? err.message : String(err)}`, {
-          event: name,
-          error: err instanceof Error ? err.message : String(err),
-        });
+        const message = err instanceof Error ? err.message : String(err);
+        this.writeLog(LOG_TYPES.ERROR, m.name, failPrefix + message, { event: event.name, error: message });
       }
     }
   }
@@ -278,14 +313,97 @@ export class ConnectCore {
   // ==================== CLI 请求协议（门铃 + 数组） ====================
 
   /**
+   * CLI 指令派发表：cmd -> 处理器。每个处理器只做三件事——解析参数、执行、把结果写进
+   * result.result；抛错统一由 handleCliRequest 捕获并记为失败（不影响其他指令）。
+   * 返回 true 表示已自行完成收尾（写结果 + 响完成门铃）——仅 exit 需要在停核心前这么做。
+   */
+  private readonly cliHandlers: Record<
+    string,
+    (args: Record<string, unknown>, result: Record<string, unknown>, source: string) => Promise<boolean | void>
+  > = {
+    // 生成一个自定义事件（来源沿用请求方）
+    event: async (args, result, source) => {
+      const name = String(args.name ?? '');
+      if (!name) throw new Error('event 指令缺少 name');
+      await this.sendEvent(name, args.data, source);
+      result.result = { delivered: name };
+    },
+    // 开启模块（即使没有事件触发）
+    start: async (args, result) => {
+      const name = String(args.module ?? '');
+      if (!name) throw new Error('start 指令缺少 module');
+      await this.startModule(name, 'cli');
+      result.result = { module: name, status: this.modules.get(name)?.status };
+    },
+    // 关闭模块（其公开数组随之消失）
+    stop: async (args, result) => {
+      const name = String(args.module ?? '');
+      if (!name) throw new Error('stop 指令缺少 module');
+      await this.stopModule(name);
+      result.result = { module: name, status: this.modules.get(name)?.status };
+    },
+    // 定向发送：目标无需声明 listen；targets 缺失/'*' = 广播给所有运行中且实现了 onEvent 的模块
+    send: async (args, result, source) => {
+      const name = String(args.name ?? '');
+      if (!name) throw new Error('send 指令缺少 name');
+      const wanted =
+        args.targets === undefined || args.targets === null || args.targets === '*'
+          ? null
+          : Array.isArray(args.targets)
+            ? args.targets.map(String)
+            : String(args.targets).split(',').map((s) => s.trim()).filter(Boolean);
+      const recipients =
+        wanted === null
+          ? [...this.modules.values()].filter((m) => this.isDeliverable(m))
+          : wanted.map((nm) => this.modules.get(nm)).filter((m): m is ModuleSlot => !!m && this.isDeliverable(m));
+      if (recipients.length === 0) {
+        this.writeLog(LOG_TYPES.EVENT_DROP, source, name, { event: name, data: args.data, note: 'cli 定向发送: 无有效接收模块' });
+      } else {
+        this.writeLog(LOG_TYPES.EVENT, source, name, { event: name, data: args.data, recipients: recipients.map((m) => m.name), directed: true });
+        await this.deliverTo(recipients, { name, data: args.data }, '处理定向事件失败: ');
+      }
+      result.result = { recipients: recipients.map((m) => m.name) };
+    },
+    // 查询模块与公共数组清单
+    state: async (_args, result) => {
+      result.result = {
+        modules: [...this.modules.values()].map((m) => ({ name: m.name, status: m.status, startedAt: m.startedAt, error: m.error })),
+        arrays: this.arrays.list(),
+      };
+    },
+    // 查询/调整事件比对索引（字节预算）：index -> 查看；index budget <MB> -> 修改预算并重建索引
+    index: async (args, result) => {
+      const action = String(args.action ?? 'view');
+      if (action === 'budget') {
+        const mb = Number(args.mb);
+        if (!Number.isFinite(mb) || mb <= 0) throw new Error('index budget 需要正数 MB');
+        this.options.indexBudgetBytes = Math.max(Math.round(mb * 1024 * 1024), MIN_INDEX_BUDGET_BYTES);
+        this.rebuildIndexes();
+        result.result = { updated: true, ...this.indexStats() };
+      } else {
+        result.result = this.indexStats();
+      }
+    },
+    // 优雅关闭：先写结果 + 响完成门铃（让 CLI 读到），再停核心；已自行收尾，标记 selfDone
+    exit: async (_args, result) => {
+      result.ok = true;
+      result.result = { stopped: true };
+      this.arrays.get(CORE_RESULTS_ARRAY).push(result);
+      await this.sendEvent(CLI_DONE_EVENT, {}, 'core');
+      await this.stop();
+      return true;
+    },
+  };
+
+  /**
    * 处理 CLI 请求（门铃协议，由 sendEvent 拦截 cli:request 后调用）：
    *  ① 从 cli:commands（CLI 拥有的公开数组）取第一条未处理的指令；
-   *  ② 执行它（事件/启动/关闭/定向发送/查询/退出），并把该条目标记为已处理；
+   *  ② 按 cliHandlers 派发表执行它，并把该条目标记为已处理（失败记为 error）；
    *  ③ 把执行结果写入 core:results（核心自己的公开数组）；
    *  ④ 广播 cli:done 完成门铃，CLI 收到后自己读 core:results 的最新一条来展示。
    * 终端是串行的，无需 id 关联：事件只当门铃，内容/结果全走数组。
    */
-  private async handleCliRequest(source: string, event: CoreEvent): Promise<void> {
+  private async handleCliRequest(source: string): Promise<void> {
     // 结果信箱惰性创建：只有真的用到 CLI 协议时才出现，普通核心保持零污染
     if (!this.arrays.has(CORE_RESULTS_ARRAY)) this.exposeArray(CORE_RESULTS_ARRAY, 'core', []);
 
@@ -297,84 +415,14 @@ export class ConnectCore {
     }
 
     const cmd = String(entry.cmd ?? '');
-    const args = (entry.args ?? {}) as Record<string, unknown>;
+    const handler = this.cliHandlers[cmd];
     this.writeLog(LOG_TYPES.CLI_COMMAND, source, 'CLI 指令: ' + cmd, { command: cmd });
 
-    const running = (m: ModuleSlot): boolean => m.status === 'running' && !!m.def?.onEvent;
     const result: Record<string, unknown> = { cmd };
+    let selfDone = false;
     try {
-      switch (cmd) {
-        case 'event': {
-          const name = String(args.name ?? '');
-          if (!name) throw new Error('event 指令缺少 name');
-          await this.sendEvent(name, args.data, source);
-          result.result = { delivered: name };
-          break;
-        }
-        case 'start': {
-          const name = String(args.module ?? '');
-          if (!name) throw new Error('start 指令缺少 module');
-          await this.startModule(name, 'cli');
-          result.result = { module: name, status: this.modules.get(name)?.status };
-          break;
-        }
-        case 'stop': {
-          const name = String(args.module ?? '');
-          if (!name) throw new Error('stop 指令缺少 module');
-          await this.stopModule(name);
-          result.result = { module: name, status: this.modules.get(name)?.status };
-          break;
-        }
-        case 'send': {
-          // 定向发送：无论目标模块是否声明了 listen，都直接把事件信息送达；targets '*' = 广播
-          const name = String(args.name ?? '');
-          if (!name) throw new Error('send 指令缺少 name');
-          const targets = args.targets;
-          const all = targets === undefined || targets === null || targets === '*';
-          const wanted = all
-            ? null
-            : (Array.isArray(targets)
-                ? targets.map(String)
-                : String(targets).split(',').map((s) => s.trim()).filter(Boolean));
-          const recipients = all
-            ? [...this.modules.values()].filter(running)
-            : wanted!.map((nm) => this.modules.get(nm)).filter((m): m is ModuleSlot => !!m && running(m));
-          const payload: CoreEvent = { name, data: args.data };
-          if (recipients.length === 0) {
-            this.writeLog(LOG_TYPES.EVENT_DROP, source, name, { event: name, data: args.data, note: 'cli 定向发送: 无有效接收模块' });
-          } else {
-            this.writeLog(LOG_TYPES.EVENT, source, name, { event: name, data: args.data, recipients: recipients.map((m) => m.name), directed: true });
-            for (const m of recipients) {
-              try {
-                await m.def!.onEvent!(m.ctx!, payload);
-              } catch (err) {
-                this.writeLog(LOG_TYPES.ERROR, m.name, '处理定向事件失败: ' + (err instanceof Error ? err.message : String(err)), {
-                  event: name,
-                  error: err instanceof Error ? err.message : String(err),
-                });
-              }
-            }
-          }
-          result.result = { recipients: recipients.map((m) => m.name) };
-          break;
-        }
-        case 'state': {
-          const modules = [...this.modules.values()].map((m) => ({ name: m.name, status: m.status, startedAt: m.startedAt, error: m.error }));
-          result.result = { modules, arrays: this.arrays.list() };
-          break;
-        }
-        case 'exit': {
-          // 退出：先写结果 + 完成门铃（CLI 收到后才能读到 core:results），再停核心
-          result.ok = true;
-          result.result = { stopped: true };
-          this.arrays.get(CORE_RESULTS_ARRAY).push(result);
-          await this.sendEvent(CLI_DONE_EVENT, {}, 'core');
-          await this.stop();
-          return;
-        }
-        default:
-          throw new Error('未知 CLI 指令: ' + cmd);
-      }
+      if (!handler) throw new Error('未知 CLI 指令: ' + cmd);
+      selfDone = (await handler((entry.args ?? {}) as Record<string, unknown>, result, source)) === true;
       result.ok = true;
       entry.status = 'done';
     } catch (err) {
@@ -383,11 +431,35 @@ export class ConnectCore {
       entry.status = 'error';
       this.writeLog(LOG_TYPES.ERROR, 'core', 'CLI 指令执行失败: ' + (err instanceof Error ? err.message : String(err)), { command: cmd });
     }
-    this.arrays.get(CORE_RESULTS_ARRAY).push(result);
-    await this.sendEvent(CLI_DONE_EVENT, {}, 'core');
+    // 除 exit（已自行收尾）外：结果必达 CLI——成功或失败都推入 core:results 并响完成门铃
+    if (!selfDone) {
+      this.arrays.get(CORE_RESULTS_ARRAY).push(result);
+      await this.sendEvent(CLI_DONE_EVENT, {}, 'core');
+    }
   }
 
   // ==================== 模块配置热加载（监听模块文件夹） ====================
+
+  /** 重建事件比对索引：从当前模块配置全量重建（配置加载/更新/移除与 CLI 改预算时调用）。 */
+  private rebuildIndexes(): void {
+    const start: { pattern: string; slot: ModuleSlot }[] = [];
+    const listen: { pattern: string; slot: ModuleSlot }[] = [];
+    for (const m of this.modules.values()) {
+      for (const p of m.config.startEvents ?? []) start.push({ pattern: p, slot: m });
+      for (const p of m.config.listen ?? []) listen.push({ pattern: p, slot: m });
+    }
+    this.startIndex.rebuild(start, this.options.indexBudgetBytes);
+    this.listenIndex.rebuild(listen, this.options.indexBudgetBytes);
+  }
+
+  /** 索引状态（CLI index 指令展示用）。 */
+  private indexStats(): { budgetBytes: number; start: MatchIndexStats; listen: MatchIndexStats } {
+    return {
+      budgetBytes: this.options.indexBudgetBytes,
+      start: this.startIndex.stats(),
+      listen: this.listenIndex.stats(),
+    };
+  }
 
   private handleConfigLoad(cfg: ModuleConfig, yamlPath: string): void {
     this.modules.set(cfg.name, {
@@ -395,7 +467,9 @@ export class ConnectCore {
       config: cfg,
       yamlPath,
       status: 'stopped',
+      seq: ++this.slotSeq,
     });
+    this.rebuildIndexes();
     this.writeLog(LOG_TYPES.CONFIG_LOAD, cfg.name, `加载配置 ${cfg.name}`, {
       module: cfg.name,
       file: cfg.file,
@@ -419,7 +493,9 @@ export class ConnectCore {
       ctx: prev?.ctx,
       startedAt: prev?.startedAt,
       error: prev?.error,
+      seq: prev?.seq ?? ++this.slotSeq,
     });
+    this.rebuildIndexes();
     this.writeLog(LOG_TYPES.CONFIG_UPDATE, cfg.name, `更新配置 ${cfg.name}`, {
       module: cfg.name,
       file: cfg.file,
@@ -439,6 +515,7 @@ export class ConnectCore {
     if (!slot) return;
     if (slot.status === 'running') await this.stopModule(name);
     this.modules.delete(name);
+    this.rebuildIndexes();
     this.writeLog(LOG_TYPES.CONFIG_REMOVE, name, `移除配置 ${name}`, { module: name });
   }
 

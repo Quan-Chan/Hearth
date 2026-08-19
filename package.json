@@ -19,7 +19,8 @@
     "test": "tsc -p tsconfig.test.json && node --test-isolation=none --test \".test-build/tests/**/*.test.js\"",
     "test:unit": "tsc -p tsconfig.test.json && node --test-isolation=none --test \".test-build/tests/unit/**/*.test.js\"",
     "test:integration": "tsc -p tsconfig.test.json && node --test-isolation=none --test \".test-build/tests/integration/**/*.test.js\"",
-    "test:apps": "tsc -p tsconfig.test.json && node --test-isolation=none --test \".test-build/tests/apps/**/*.test.js\""
+    "test:apps": "tsc -p tsconfig.test.json && node --test-isolation=none --test \".test-build/tests/apps/**/*.test.js\"",
+    "bench": "npm run build && node benchmarks/perf.js"
   },
   "dependencies": {
     "yaml": "^2.5.1"

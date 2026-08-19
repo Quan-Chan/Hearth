@@ -23,6 +23,10 @@ async function main(): Promise<void> {
     if (coreCfg.moduleDir) options.moduleDir = path.resolve(baseDir, String(coreCfg.moduleDir));
     if (coreCfg.logFile) options.logFile = path.resolve(baseDir, String(coreCfg.logFile));
     if (coreCfg.watch !== undefined) options.watch = Boolean(coreCfg.watch);
+    if (coreCfg.indexBudgetBytes !== undefined) {
+      const bytes = Number(coreCfg.indexBudgetBytes);
+      if (Number.isFinite(bytes) && bytes > 0) options.indexBudgetBytes = bytes;
+    }
     if (coreCfg.logToConsole) options.logToConsole = true;
     // eslint-disable-next-line no-console
     console.log(`[connect-core] 读取配置文件: ${configPath}`);

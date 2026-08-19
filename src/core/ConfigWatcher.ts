@@ -1,9 +1,15 @@
 /**
- * 模块文件夹监听器：框架核心始终监听模块文件夹（递归子目录）。
- * 模块布局约定：每个模块一个文件夹，文件夹内放 <name>.yaml + <name>.cjs。
+ * 模块文件夹监听器：框架核心始终监听模块文件夹（**不递归** —— 只识别模块目录本层与
+ * 『每个模块一个子文件夹』层；不深入子目录，避免把模块内部嵌套的子核心/子模块配置
+ * 文件误认成本核心的模块，造成不可预测的文件冲突）。
+ * 模块布局约定：每个模块一个文件夹，文件夹内放 <name>.yaml + <name>.cjs；
+ * 也支持把 <name>.yaml 直接放在模块目录顶层（扁平，测试常用）。
  *  - 新的 YAML 配置文件出现   -> onLoad
  *  - 已有 YAML 文件内容变化   -> onUpdate
  *  - YAML 文件被删除          -> onRemove
+ * 检测策略（性能）：稳态每轮只 statSync（mtimeMs+size+ctimeMs 指纹），指纹不变的文件
+ * 直接跳过、不读内容；指纹变化才 readFileSync + sha1 二次确认（同内容只改 mtime 的
+ * touch 不触发 onUpdate）；哈希真变才解析 YAML。解析失败不更新指纹 -> 下轮重试（自愈）。
  * 通过内容哈希比对实现，轮询（默认 200ms）跨平台可靠。
  */
 import * as fs from 'fs';
@@ -19,6 +25,18 @@ export interface WatcherCallbacks {
   onError?(name: string, message: string): void;
 }
 
+/** 文件指纹：stat 快照（任何写入都会改变 ctime，配合 mtime+size 消除碰撞漏报）。 */
+interface StatFingerprint {
+  name: string;
+  mtimeMs: number;
+  size: number;
+  ctimeMs: number;
+}
+
+function sameFingerprint(a: StatFingerprint, b: fs.Stats): boolean {
+  return a.mtimeMs === b.mtimeMs && a.size === b.size && a.ctimeMs === b.ctimeMs;
+}
+
 export class ConfigWatcher {
   private dir: string;
   private callbacks: WatcherCallbacks;
@@ -27,6 +45,8 @@ export class ConfigWatcher {
   private timer?: NodeJS.Timeout;
   /** 已知配置：模块名 -> 文件信息 */
   private known = new Map<string, { yamlPath: string; hash: string }>();
+  /** stat 指纹缓存：yamlPath -> 上次 stat 快照（+该文件声明的模块名，稳态跳过读文件用） */
+  private stats = new Map<string, StatFingerprint>();
   private scanning = false;
 
   constructor(opts: {
@@ -68,6 +88,19 @@ export class ConfigWatcher {
       const files = collectYamlFiles(this.dir);
       const seen = new Set<string>();
       for (const yamlPath of files) {
+        // 1) 稳态快路径：仅 stat，指纹与上次一致则跳过（文件没变，不读内容）
+        let stat: fs.Stats;
+        try {
+          stat = fs.statSync(yamlPath);
+        } catch {
+          continue;
+        }
+        const prevStat = this.stats.get(yamlPath);
+        if (prevStat && sameFingerprint(prevStat, stat)) {
+          seen.add(prevStat.name);
+          continue;
+        }
+        // 2) 指纹变了：读内容 + 哈希二次确认（touch 只改 mtime 时哈希相同 -> 跳过）
         let text: string;
         try {
           text = fs.readFileSync(yamlPath, 'utf8');
@@ -75,17 +108,29 @@ export class ConfigWatcher {
           continue;
         }
         const hash = createHash('sha1').update(text).digest('hex');
+        let cfgName = prevStat?.name;
+        if (cfgName !== undefined) {
+          const prev = this.known.get(cfgName);
+          if (prev && prev.hash === hash) {
+            // 内容没变：只更新指纹（不触发 onUpdate）
+            this.stats.set(yamlPath, { name: cfgName, mtimeMs: stat.mtimeMs, size: stat.size, ctimeMs: stat.ctimeMs });
+            seen.add(cfgName);
+            continue;
+          }
+        }
+        // 3) 哈希真变（或新文件）：解析 YAML 确定模块名并触发回调
         let cfg: ModuleConfig;
         try {
-          // file 相对路径按 YAML 自己所在目录解析（每模块一文件夹）
           cfg = parseModuleConfig(text, path.dirname(yamlPath));
         } catch (err) {
           this.callbacks.onError?.(
             path.basename(yamlPath, path.extname(yamlPath)),
             err instanceof Error ? err.message : String(err),
           );
-          continue;
+          continue; // 不更新指纹 -> 下轮重试（自愈）
         }
+        this.stats.set(yamlPath, { name: cfg.name, mtimeMs: stat.mtimeMs, size: stat.size, ctimeMs: stat.ctimeMs });
+        seen.add(cfg.name);
         const prev = this.known.get(cfg.name);
         if (!prev) {
           this.known.set(cfg.name, { yamlPath, hash });
@@ -94,11 +139,11 @@ export class ConfigWatcher {
           this.known.set(cfg.name, { yamlPath, hash });
           await this.callbacks.onUpdate(cfg, yamlPath);
         }
-        seen.add(cfg.name);
       }
       for (const [name, info] of [...this.known]) {
         if (!seen.has(name)) {
           this.known.delete(name);
+          this.stats.delete(info.yamlPath);
           await this.callbacks.onRemove(name);
         }
       }
@@ -112,27 +157,37 @@ export class ConfigWatcher {
   }
 }
 
-/** 递归收集模块目录下所有 YAML 文件（支持每模块一文件夹的布局）。确定性顺序，跳过 node_modules 与隐藏目录。 */
+/** 收集模块 YAML（不递归）：只识别两层——模块目录顶层直接放的 YAML，以及『每个模块
+ * 一个子文件夹』（modules/<name>/）里直接放的 YAML。不再递归深入任意子目录：
+ * 递归会把模块内部嵌套的子核心/子模块配置文件误认成本核心的模块，造成不可预测的文件冲突。
+ * 确定性顺序，跳过 node_modules 与隐藏目录。 */
 function collectYamlFiles(dir: string): string[] {
   const out: string[] = [];
-  const walk = (d: string): void => {
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-    } catch {
-      return;
-    }
-    for (const ent of entries) {
-      const p = path.join(d, ent.name);
-      if (ent.isDirectory()) {
-        if (ent.name === 'node_modules' || ent.name.startsWith('.')) continue;
-        walk(p);
-      } else if (/\.ya?ml$/i.test(ent.name)) {
-        out.push(p);
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  } catch {
+    return out;
+  }
+  const isYaml = (name: string): boolean => /\.ya?ml$/i.test(name);
+  for (const ent of entries) {
+    const p = path.join(dir, ent.name);
+    if (ent.isDirectory()) {
+      // 模块子文件夹：只取其中直接放的 YAML，不再进入更深层
+      if (ent.name === 'node_modules' || ent.name.startsWith('.')) continue;
+      let sub: fs.Dirent[];
+      try {
+        sub = fs.readdirSync(p, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+      } catch {
+        continue;
       }
+      for (const s of sub) {
+        if (s.isFile() && isYaml(s.name)) out.push(path.join(p, s.name));
+      }
+    } else if (isYaml(ent.name)) {
+      out.push(p);
     }
-  };
-  walk(dir);
+  }
   return out;
 }
 

@@ -7,6 +7,13 @@
  */
 const SPECIAL_CHARS = '.*+?^${}()|[]\\';
 
+/**
+ * 编译缓存：同一条件文本只编译一次（条件集由配置驱动、数量有界）。
+ * 上限防病理性超大条件集撑爆缓存：超限后现场编译，正确性不变。
+ */
+const MAX_CACHED_PATTERNS = 4096;
+const regexCache = new Map<string, RegExp>();
+
 export function eventMatches(pattern: string, eventName: string): boolean {
   if (typeof pattern !== 'string' || typeof eventName !== 'string') return false;
   return patternToRegExp(pattern).test(eventName);
@@ -19,11 +26,15 @@ export function anyEventMatches(patterns: string[] | undefined, eventName: strin
 }
 
 export function patternToRegExp(pattern: string): RegExp {
+  const cached = regexCache.get(pattern);
+  if (cached) return cached;
   let out = '^';
   for (const ch of pattern) {
     if (ch === '*') out += '.*';
     else if (ch === '?') out += '.';
     else out += SPECIAL_CHARS.includes(ch) ? '\\' + ch : ch;
   }
-  return new RegExp(out + '$');
+  const re = new RegExp(out + '$');
+  if (regexCache.size < MAX_CACHED_PATTERNS) regexCache.set(pattern, re);
+  return re;
 }
