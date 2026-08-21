@@ -10,7 +10,9 @@
  * 检测策略（性能）：稳态每轮只 statSync（mtimeMs+size+ctimeMs 指纹），指纹不变的文件
  * 直接跳过、不读内容；指纹变化才 readFileSync + sha1 二次确认（同内容只改 mtime 的
  * touch 不触发 onUpdate）；哈希真变才解析 YAML。解析失败不更新指纹 -> 下轮重试（自愈）。
- * 通过内容哈希比对实现，轮询（默认 200ms）跨平台可靠。
+ * 为什么轮询而不是 fs.watch：fs.watch 在 Windows/macOS 上的事件丢失与语义差异问题
+ * 多（保存中间态、编辑器原子替换都可能漏报/误报），轮询 + 内容哈希每帧给出确定的结论，
+ * 换来的是跨平台一致可靠；代价只是一个 200ms 的 stat 心跳，稳态开销可忽略。
  */
 import * as fs from 'fs';
 import * as path from 'path';

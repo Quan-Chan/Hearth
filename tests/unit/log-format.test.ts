@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { LOG_TYPES, categoryOf, formatLogEntry } from '../../src/core/logFormat';
-import type { LogEntry } from '../../src/core/EventStreamLog';
+import type { LogEntry } from '../../src/types';
 
 test('日志类型命名统一为 kebab-case（域-动作），无风格混杂', () => {
   for (const type of Object.values(LOG_TYPES)) {

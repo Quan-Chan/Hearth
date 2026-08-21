@@ -254,3 +254,55 @@ test('模块改写自己的 YAML：startEvents 变化，新的启动事件可自
     rmDir(dir);
   }
 });
+
+// ==================== 测试 5：事件两段式——head（事件头：核心自动生成的来源）+ data（内容：模块写） ====================
+
+const HEAD_RECV_CJS = `module.exports = {
+  name: 'headrecv',
+  start(ctx) { ctx.exposeArray('head:got', []); },
+  onEvent(ctx, event) {
+    // 接收方看到的完整事件：头(head.source) + 内容(data)
+    ctx.array('head:got').push({ name: event.name, source: event.head.source, data: event.data });
+  },
+};
+`;
+const HEAD_SEND_CJS = `module.exports = {
+  name: 'headsend',
+  start(ctx) { ctx.exposeArray('head:marks', []); },
+  onEvent(ctx, event) {
+    if (event.name !== 'head:go') return;
+    // 模块只写事件名与内容，头（来源=本模块）由核心自动生成
+    ctx.sendEvent('head:relay', { note: '模块自己写的内容' });
+  },
+};
+`;
+
+test('事件两段式：head(来源)由核心自动生成，模块只写 data(内容)', async () => {
+  const dir = mkTmpDir('head');
+  try {
+    fs.writeFileSync(path.join(dir, 'headsend.cjs'), HEAD_SEND_CJS);
+    fs.writeFileSync(path.join(dir, 'headsend.yaml'), yamlFor('headsend', { startEvents: ['core:startup'], listen: ['head:go'] }));
+    fs.writeFileSync(path.join(dir, 'headrecv.cjs'), HEAD_RECV_CJS);
+    fs.writeFileSync(path.join(dir, 'headrecv.yaml'), yamlFor('headrecv', { startEvents: ['core:startup'], listen: ['core:startup', 'head:relay'] }));
+    const core = new ConnectCore({ moduleDir: dir, watch: false });
+    await core.start();
+    // ① 核心自产事件 core:startup：事件头来源自动为 'core'，不带内容
+    const startupSeen = core.array('head:got').find((e: any) => e.name === 'core:startup') as any;
+    assert.ok(startupSeen, 'core:startup 应被监听模块看到');
+    assert.equal(startupSeen.source, 'core');
+    assert.equal(startupSeen.data, undefined);
+    // ② 模块发出的事件：头来源自动为发出模块名，内容是模块写的
+    await core.sendEvent('head:go');
+    const relayed = core.array('head:got').find((e: any) => e.name === 'head:relay') as any;
+    assert.ok(relayed, 'head:relay 应到达监听模块');
+    assert.equal(relayed.source, 'headsend');
+    assert.deepEqual(relayed.data, { note: '模块自己写的内容' });
+    // ③ 宿主直接调用：头来源为 'external'
+    await core.sendEvent('head:relay', { from: 'host' });
+    const hostSeen = core.array('head:got').filter((e: any) => e.name === 'head:relay').at(-1) as any;
+    assert.equal(hostSeen.source, 'external');
+    await core.stop();
+  } finally {
+    rmDir(dir);
+  }
+});

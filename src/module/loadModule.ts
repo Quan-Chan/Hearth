@@ -1,9 +1,8 @@
 /**
- * 模块程序加载器：把 YAML 里 file 指向的"程序"加载为 ModuleDefinition。
- * 支持：
- *  - .cjs / .js  -> CommonJS require（清除缓存以支持热更新）
- *  - .mjs / .ts  -> 动态 import（ESM）
- *  - 导出对象（{ start, stop, onEvent }）或工厂函数（() => ({...})）
+ * 模块程序加载器：把 YAML 里 file 指向的"程序"归一化成核心认识的 ModuleDefinition。
+ * 支持 CJS 对象、ESM 默认导出、工厂函数（运行时求值）三种写法，统一收敛为
+ * { start, stop, onEvent } 钩子集合。
+ * 加载点放在每次 startModule（启动即重载）：YAML 更新触发的"重启"因此拿到最新代码（热更新）。
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -16,15 +15,16 @@ export async function loadModuleProgram(filePath: string): Promise<ModuleDefinit
   const ext = path.extname(abs).toLowerCase();
   let loaded: unknown;
   if (ext === '.mjs' || ext === '.ts') {
-    // 注意：tsc 在 CJS 输出下会把 import() 编译成 require()，导致 ESM 加载失败。
-    // 用 Function 包装得到真正的动态 import。
+    // tsconfig 按 CommonJS 产出，tsc 会把 import() 死编译成 require()，而 require()
+    // 拿不到 ESM。用 Function 包一层换来真正的动态 import，ESM/TS 才能被加载。
     const dynamicImport = new Function('s', 'return import(s)') as (s: string) => Promise<unknown>;
     loaded = await dynamicImport(pathToFileURL(abs).href);
   } else {
-    // CommonJS：清缓存后 require，保证 YAML 更新后重新加载最新代码
+    // 先清缓存再 require：不删缓存，二次加载会拿到首次启动的旧实现，热更新就失效了。
     delete require.cache[abs];
     loaded = require(abs);
   }
+  // 归一化：ESM 常见 default 导出、CJS 直接导出对象或工厂函数，统一取最终形态。
   let def: unknown = loaded;
   if (loaded && typeof loaded === 'object' && 'default' in (loaded as Record<string, unknown>)) {
     def = (loaded as Record<string, unknown>).default;

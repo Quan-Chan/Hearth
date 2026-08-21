@@ -10,7 +10,7 @@
  * 日志是一条连续的时间线：发生什么就记录什么，按时间顺序逐条输出（formatLogEntry）。
  * 需要分区/过滤时直接按 type 过滤（categoryOf / byCategory），不在展示层做分区。
  */
-import type { LogEntry } from './EventStreamLog';
+import type { LogEntry } from '../types';
 
 /** 全部日志类型（常量集中管理，保证命名统一）。 */
 export const LOG_TYPES = {

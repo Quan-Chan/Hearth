@@ -1,23 +1,15 @@
 /**
- * 事件流水日志：原样记录"核心框架干的事情"（JSONL 落盘 + 内存读取，顺序保证）。
- * 每条记录三字段主结构：{ type, source, message }（详见 logFormat.ts）。
+ * 事件流水日志：一条"只记录核心自己干的事情"的连续时间线。
+ * 每条记录三字段主结构：{ type, source, message }（见 logFormat.ts）+ 任意结构化附加字段。
+ *
+ * 双层存储：内存 entries 供进程内即时查询，JSONL 追加流负责持久化；
+ * 写盘失败只吞掉、绝不影响核心主流程；数组操作不写日志（高频数据通道，逐条记会撑爆文件）。
  */
 import * as fs from 'fs';
 import * as path from 'path';
 import { categoryOf, formatLogEntry } from './logFormat';
 import type { LogCategory } from './logFormat';
-
-export interface LogEntry {
-  /** ISO 时间戳（record 自动填充） */
-  t?: string;
-  /** ① 日志类型：核心的动作（event / module-start / ...） */
-  type: string;
-  /** ② 日志来源：动作涉及的对象（core / external / 模块名） */
-  source: string;
-  /** ③ 日志信息：人类可读的具体内容 */
-  message: string;
-  [key: string]: unknown;
-}
+import type { LogEntry } from '../types';
 
 export class EventStreamLog {
   private entries: LogEntry[] = [];
@@ -30,7 +22,7 @@ export class EventStreamLog {
     this.consoleOut = opts.logToConsole ?? false;
   }
 
-  /** 追加一条记录（同步写内存，异步落盘，顺序保证）。 */
+  /** 追加一条记录（先落内存再到磁盘，顺序一致）。 */
   record(entry: LogEntry): void {
     const full: LogEntry = { t: new Date().toISOString(), ...entry };
     this.entries.push(full);
@@ -45,7 +37,7 @@ export class EventStreamLog {
     }
   }
 
-  /** 惰性打开文件流（目录自动创建）。 */
+  /** 惰性打开文件流（目录自动创建）：没配置路径或还没写过日志前，不建文件、零副作用。 */
   private ensureStream(): void {
     if (this.stream || !this.filePath) return;
     fs.mkdirSync(path.dirname(path.resolve(this.filePath)), { recursive: true });

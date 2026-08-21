@@ -1,11 +1,22 @@
 /**
- * Connect-Core 启动入口：启动核心（= 启动整机，模块按事件自动起来）。
+ * Connect-Core 启动入口：一个命令行外衣里的"整机开关"。
+ *
+ * 执行逻辑：
+ *  1. 读配置：默认取命令行第 2 个参数或当前目录 connect-core.yaml；
+ *     有则解析出 core 段的启动选项，没有则全部走默认值。
+ *  2. 启动核心（startCore）：核心扫描模块目录、发出 core:startup，
+ *     所有依赖该事件的模块自动启动——到这步，"整机"其实已经起来了。
+ *  3. 驻留：核心的模块监听轮询器是 unref 的（不阻止进程退出），所以这里用一个
+ *     永不触发的定时器占住事件循环，让进程活到用户主动关闭。
+ *  4. 收尾：SIGINT / SIGTERM 时优雅关闭——先广播 core:shutdown 让模块收尾，
+ *     再逆序停止、落盘日志、退出。
+ *
  * 用法：node dist/connect-core.js [connect-core.yaml]
- * 配置文件示例：
+ * 配置示例（connect-core.yaml）：
  *   core:
- *     moduleDir: ./modules
+ *     moduleDir: ./modules        # 模块（YAML 配置）所在目录
  *     logFile: ./logs/event-stream.log
- *     watch: true
+ *     watch: true                 # 是否监听模块目录变化（热加载）
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -19,6 +30,8 @@ async function main(): Promise<void> {
   if (fs.existsSync(configPath)) {
     const raw = parseYaml(fs.readFileSync(configPath, 'utf8')) as Record<string, any> | null;
     const coreCfg: Record<string, any> = (raw?.core ?? raw ?? {}) as Record<string, any>;
+    // YAML 里的相对路径都相对配置文件所在目录解析（而非当前工作目录），
+    // 这样即使从任意目录用绝对路径指过来，也能正确定位模块。
     const baseDir = path.dirname(configPath);
     if (coreCfg.moduleDir) options.moduleDir = path.resolve(baseDir, String(coreCfg.moduleDir));
     if (coreCfg.logFile) options.logFile = path.resolve(baseDir, String(coreCfg.logFile));
@@ -49,7 +62,8 @@ async function main(): Promise<void> {
       (core.listModules().map((m) => m.name).join(', ') || '(无)'),
   );
 
-  // 保持进程存活：核心启动后持续监听模块文件夹并响应事件
+  // 占住事件循环：真正的工作（模块监听 / 事件路由）都挂在核心内部，
+  // 这里只需让进程不自然退出；退出由下方信号处理决定。
   setInterval(() => {}, 60_000);
 
   const shutdown = async (): Promise<void> => {
@@ -62,6 +76,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown());
 }
 
+// 启动失败也要干净退出并给出可诊断的报错，而不是挂在半初始化的状态。
 main().catch((err: Error) => {
   // eslint-disable-next-line no-console
   console.error('[connect-core] 启动失败:', err.message);
