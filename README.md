@@ -9,8 +9,9 @@
 
 | 需求 | 实现 |
 | --- | --- |
-| 事件是纯字符串消息信号 | `CoreEvent.name` 为字符串信号（如 `core:startup`），支持精确匹配与通配符（`*`、`?`）比对 |
+| 事件是纯字符串消息信号 | **两段式**：`head`（事件头：**核心自动生成**的来源，如 `core`/`external`/模块名）+ `data`（事件内容：**模块自己写**）；`CoreEvent.name` 为字符串信号（如 `core:startup`），支持精确匹配与通配符（`*`、`?`）比对，head/data 不参与匹配 |
 | 公共数组：公开、可拉取、不能改名 | **映射语义**：公开 = 把数组对象映射到名字（存引用）；`array()` 返回实时引用，像原生数组一样使用；公开者消失（模块停止）数组自动消失；数组名不可变 |
+| 定向消息：模块对模块 点对点直达 | `sendTo(目标, data)` + `onMessage(ctx, message)`：只发给指定模块（或核心 `'core'`），不经事件比对、不进公共数组；消息只有基础头（`head.source`=发送者模块名，核心自动打、不可伪造）+ 内容；回复直达发起方本人，多请求方互不污染 |
 | 模块 = 可被加载的程序，靠 YAML 启动 | 模块 = YAML 配置 + 程序文件（`.cjs/.js/.mjs/.ts`），YAML 声明 `startEvents`（出现即启动）与 `listen`（出现即向其发送事件消息） |
 | 核心方法：启动/关闭模块、发送事件 | `startModule / stopModule / sendEvent` |
 | 核心自产事件 | `core:startup`（核心启动）、`core:shutdown`（核心关闭） |
@@ -60,6 +61,8 @@ config:                  # 可选，透传给模块（ctx.config.config）
 
 事件名支持通配符：`*` 匹配任意字符序列，`?` 匹配单个字符。
 
+事件信息是**两段式**：第一段事件头 `event.head`（核心自动生成，`head.source` = 发出该事件的模块名；核心自产为 `core`、宿主直接调用为 `external`）；第二段事件内容 `event.data`（发出模块自己写，可选）。模块用 `ctx.sendEvent` 时只提供事件名与内容，头由核心自动打上——模块无法伪造来源。
+
 ### 3.2 模块程序
 
 ```js
@@ -70,7 +73,7 @@ module.exports = {
     ctx.exposeArray('greetings', []);          // 公开数组
     ctx.log('问候模块已就绪');                    // 模块日志（进入事件流水）
   },
-  async onEvent(ctx, event) {  // 核心向模块发送事件消息时调用
+  async onEvent(ctx, event) {  // 核心向模块发送事件消息时调用（事件两段式：event.head.source=来源 / event.data=内容）
     if (event.name === 'greet') {
       ctx.array('greetings').push('你好, ' + event.data.name + '!');
       ctx.sendEvent('greet:done', { name: event.data.name });  // 产生新事件（链式协作）
@@ -88,7 +91,9 @@ module.exports = {
 | `ctx.exposeArray(name, initial?)` | 公开数组（同拥有者重新公开 = 重置内容） |
 | `ctx.unexposeArray(name)` | 取消公开数组（仅拥有者） |
 | `ctx.array(name)` | 拉取特定数组：返回被映射对象引用（O(1)），原生数组语法，一次修改处处有效 |
-| `ctx.sendEvent(name, data?)` | 产生事件消息 |
+| `ctx.sendEvent(name, data?)` | 产生事件消息：模块只写事件名与内容（第二段 `data`）；事件头（第一段 `head.source`=本模块名）由核心自动生成，不可伪造 |
+| `ctx.sendTo(target, data?)` | 定向发送消息（信息直达）：只发给指定模块或核心 `'core'`；返回是否送达（true=有接收方） |
+| `onMessage(ctx, message)`（由核心调用，可选） | 接收定向消息：`message.head.source`=发送者，`message.data`=内容；**不实现就收不到**（显式 opt-in） |
 | `ctx.log(...)` / `ctx.config` | 模块日志 / YAML 配置 |
 
 
@@ -124,12 +129,12 @@ module.exports = {
 
 测试策略：先分析框架能做什么（事件驱动插件化），再选取依赖这些能力的真实软件形态，把它们构建在框架之上进行端到端验证。
 
-**81 个测试用例全部通过**（`npm test`）：
+**85 个测试用例全部通过**（`npm test`）：
 
 | 层级 | 文件 | 覆盖 |
 | --- | --- | --- |
 | 单元 | `tests/unit/`（7 文件，37 用例） | 事件匹配器、比对索引（精确表/前缀桶/溢出表/字节预算）、公共数组注册表、事件流水日志、YAML 解析、模块加载、日志格式 |
-| 集成 | `tests/integration/`（5 文件，34 用例） | 核心生命周期、事件路由、失败隔离、YAML 热加载（stat 指纹/touch/收敛）、公共数组跨模块、模块自改 YAML、CLI 门铃协议与索引指令 |
+| 集成 | `tests/integration/`（6 文件，38 用例） | 核心生命周期、事件路由、失败隔离、YAML 热加载（stat 指纹/touch/收敛）、公共数组跨模块、模块自改 YAML、CLI 门铃协议与索引指令、定向信息直达 |
 | 应用 | `tests/apps/`（5 文件，10 用例） | 见下表 |
 
 **构建在框架上的真实软件（即测试载体）：**
@@ -146,7 +151,7 @@ module.exports = {
 
 ```
 src/                  # 框架核心（极简中间层）
-  core/               # ConnectCore / EventMatcher / MatchIndex / ArrayRegistry / ConfigWatcher / EventStreamLog / ModuleContext
+  core/               # 每个文件一个功能部分：ConnectCore（核心类本体）/ CliProtocol（CLI 门铃协议）/ EventMatcher / MatchIndex / ArrayRegistry / ConfigWatcher / EventStreamLog / ModuleContext / logFormat
   module/loadModule.ts# 模块程序加载器
   index.ts            # 公共入口（createCore / startCore）
   connect-core.ts     # 启动入口：启动核心（= 整机，模块按事件自动起来）
@@ -163,7 +168,7 @@ benchmarks/          # 性能基准（npm run bench：事件比对 / 配置轮�
 ```
 
 ## 6.5 CLI（可选模块）
-CLI 是一个**可选模块**（`modules/cli/`）：它在模块生态里，核心启动后你就获得一个命令行界面；不放它就完全没有 CLI。它与核心通过**门铃协议**（事件=门铃、数组=内容）联动工作，协议明细见下方"通信协议"一节。
+CLI 是一个**可选模块**（`modules/cli/`）：它在模块生态里，核心启动后你就获得一个命令行界面；不放它就完全没有 CLI。它与核心通过**信息直达**（`sendTo('core', ...)` 直发指令、`onMessage` 直收结果）联动工作——不再需要公共数组与门铃事件；协议明细见下方"通信协议"一节。（旧的门铃协议 `cli:commands`/`cli:request`/`core:results`/`cli:done` 仍保留，仅向后兼容。）
 
 ```bash
 npm start    # 启动核心 == 启动整个软件（附带 CLI 命令行界面）
@@ -171,18 +176,15 @@ npm start    # 启动核心 == 启动整个软件（附带 CLI 命令行界面�
 # 核心是唯一启动入口（模块由核心按事件带起）
 ```
 
-**通信协议（约定式：事件=门铃、数组=内容）**——核心只实现协议，界面、解析、日志展示等高级功能全部在 cli 模块端。
+**通信协议（信息直达）**——核心只实现协议，界面、解析、日志展示等高级功能全部在 cli 模块端。
 
 | 步骤 | 谁 | 动作 | 载体 |
 | --- | --- | --- | --- |
-| ① | CLI | 把指令内容写入公开数组 `cli:commands`（CLI 拥有）：`{cmd, args}` | 数组 |
-| ② | CLI | 广播 `cli:request` 请求门铃 | 事件 |
-| ③ | 核心 | 从 `cli:commands` 取第一条未处理指令并执行，标记为已处理 | 数组读取 |
-| ④ | 核心 | 把执行结果写入公开数组 `core:results`（核心拥有）：`{cmd, ok, result, error}` | 数组 |
-| ⑤ | 核心 | 广播 `cli:done` 完成门铃 | 事件 |
-| ⑥ | CLI | 收到后读 `core:results` 的最新一条并展示 | 数组读取 |
+| ① | CLI/发起模块 | `sendTo('core', {cmd, args})` 直接把指令发给核心 | 定向消息 |
+| ② | 核心 | 执行指令，把结果 `{cmd, ok, result, error}` 用 `sendTo` 直接回传**发起方本人** | 定向消息 |
+| ③ | 发起方 | `onMessage(ctx, message)` 直接收到自己的结果并展示 | 定向消息 |
 
-终端是串行的，事件只是门铃、**不携带任何数据**；指令与结果全走数组，数组名是双方约定。
+结果只投递给发起方自己（`head.source` = 谁发的就回给谁），多个模块同时调用互不污染、无需公共数组、无需事件门铃。参数与指令表见下（cmd/args 不变）。
 
 | 指令 | 作用 | 传给核心的 cmd/args |
 | --- | --- | --- |
@@ -195,17 +197,18 @@ npm start    # 启动核心 == 启动整个软件（附带 CLI 命令行界面�
 | `log [过滤词] [条数]` | 查看日志时间线（CLI 自己读 JSONL 文件 grep，核心不参与） | —（CLI 端） |
 | `help` / `exit` | 帮助 / 优雅关闭 | `{cmd:'exit'}` → 核心停止 |
 
-**响应的两种模式**（CLI 与核心之间、模块之间通用）：
-- (a) 事件 = 门铃：只广播"已完成/有信息/有请求"这类信号（如 `cli:request` / `cli:done`、某模块的 `xxx:done`），载荷极轻；
-- (b) 数组 = 内容：真正的数据放公开数组（如 `core:results`、各模块自己的 `xxx:out`），接收方用 `ctx.array()` 自己拉取，不把大块内容塞进事件信息。
-- 约定示例（门铃协议）：数组名 `cli:commands` / `core:results` 是双方约定；事件不携带任何内容，像个纯净的门铃。
+**响应的三种模式**（CLI 与核心之间、模块之间通用）：
+- (a) 事件 = 广播信号：发布订阅/扇出（如 `home:motion`一响全家响应），载荷极轻；
+- (b) 数组 = 内容/持久共享：真正的数据放公开数组（如 `chat:history`、各模块自己的 `xxx:out`），接收方用 `ctx.array()` 自己拉取；
+- (c) 定向消息 = 私信道（信息直达）：点对点直发——`ctx.sendTo(目标, data)` 发送、`onMessage` 接收，最适合"请求-答"与私聊，结果只投给发起方、多请求方互不污染。
+- 约定示例（信息直达）：发 `sendTo('core', {cmd, args})`，收 `onMessage`（`message.head.source`=发起方、`message.data={cmd, ok, result, error}`）。
 
 ## 7. 常用命令
 
 ```bash
 npm run typecheck     # 类型检查
 npm run build         # 编译到 dist/
-npm test              # 全量测试（72 用例）
+npm test              # 全量测试（85 用例）
 npm run test:unit     # 仅单元
 npm run test:integration
 npm run test:apps
