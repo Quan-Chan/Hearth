@@ -6,7 +6,9 @@
 
 | 部件 | 文件 | 职责 |
 | --- | --- | --- |
-| ConnectCore | src/core/ConnectCore.ts | 核心类：生命周期、事件派发、模块管理、配置热加载、数组 API、查询 |
+| ConnectCore | src/core/ConnectCore.ts | 核心类：生命周期、配置热加载、数组 API、查询，委托下两者 |
+| ModuleManager | src/core/ModuleManager.ts | 模块状态机：启动/停止/重启/停机收尾 + 槽位表 |
+| EventDispatcher | src/core/EventDispatcher.ts | 事件派发与定向通道：sendEvent/sendDirected/sendTo |
 | MatchIndex | src/core/MatchIndex.ts | 事件比对索引：精确表 + 通配列表 |
 | EventMatcher | src/core/EventMatcher.ts | 事件名匹配规则与正则编译缓存 |
 | ConfigWatcher | src/core/ConfigWatcher.ts | 模块文件夹轮询监听与 YAML 解析 |

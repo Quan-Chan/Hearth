@@ -46,7 +46,7 @@ export class EventDispatcher {
    *  调用方（模块 ctx.sendEvent / 核心自产 / 宿主）只负责给事件名段与内容 data。 */
   async sendEvent(name: string, data?: unknown, source: string = 'external'): Promise<void> {
     if (!this.core.started) throw new Error('Connect-Core 未启动，不能发送事件');
-    // 停机期间冻结事件面：外部与模块的事件一律拒绝（核心自产的关闭广播走 dispatch 内部通道）
+    // 停机期间冻结事件面：外部与模块的事件一律拒绝（source 为 core 的保留给停机期间的内部收尾）
     if (this.core.stopping && source !== 'core') {
       throw new Error('Connect-Core 正在关闭，不能再发送事件');
     }
