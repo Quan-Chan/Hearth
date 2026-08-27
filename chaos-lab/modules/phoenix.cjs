@@ -15,7 +15,7 @@ function rewrite(self) {
       fs.writeFileSync(YAML_PATH, text); // 直接覆盖：制造半写入窗口
     } else {
       fs.writeFileSync(tmp, text);
-      fs.renameSync(tmp, YAML_PATH); // 原子替换
+      fs.renameSync(tmp, YAML_PATH); // 整文件替换
     }
   } catch (e) { /* 文件系统干扰失败无所谓 */ }
 }

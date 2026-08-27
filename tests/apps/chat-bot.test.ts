@@ -46,7 +46,7 @@ test('聊天机器人：消息流转、命令应答、历史与用户数组', as
     assert.equal(arr(core, 'public:gateway:history').length, 6);
     // 通配符统计：chat:receive x4 + chat:command x3 + chat:reply x2 = 9 个事件
     assert.equal(arr(core, 'public:stats:stats')[0].count, 9);
-    // 事件流水记录了所有事件（含派生事件）
+    // 日志记录了所有事件（含派生事件）
     const events = core.log.byType('event').map((e) => e.event);
     assert.ok(events.includes('external:chat:receive'));
     assert.ok(events.includes('router:chat:command'));
@@ -57,7 +57,7 @@ test('聊天机器人：消息流转、命令应答、历史与用户数组', as
   }
 });
 
-test('聊天机器人：日志文件记录事件流水（原样记录所有发生的事情）', async () => {
+test('聊天机器人：日志文件记录全部事件（原样记录所有发生的事情）', async () => {
   const tmp = mkTmpDir('chatbot');
   try {
     const logFile = path.join(tmp, 'stream.log');

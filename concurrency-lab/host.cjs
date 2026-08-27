@@ -57,7 +57,7 @@ async function main() {
     evidence.freezeGapMs = maxGap;
     if (!(maxGap >= 2600)) failures.push('未观察到同步冻结造成的停顿（最大间隔 ' + maxGap + 'ms）');
 
-    // 断言3：b-after 在前座等待期间收不到 request，解锁后才收到（排队转发语义）
+    // 断言3：b-after 在前座等待期间收不到 request，解锁后才收到（排队转发规则）
     const b = readArr(core, 'b-status');
     evidence.bCount = b.n;
     evidence.bReceivedAtMs = b.last - T0;

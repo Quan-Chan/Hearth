@@ -1,0 +1,385 @@
+/**
+ * 模块管理器：模块状态机与槽位注册表。
+ *
+ * 职责：
+ *  - 持有全部模块槽位（modules Map）与注册序号（slotSeq）；
+ *  - 启动/停止/重启单个模块（startModule/stopModule/reloadModule）；
+ *  - 核心停机时并行停止全部模块并等待"已关闭"（stopAll，超时强制关闭）；
+ *  - 配置热加载的槽位增删改（register/applyUpdate/remove，由 ConnectCore 的
+ *    handleConfig* 调用，索引重建与日志由调用方负责）。
+ *
+ * 启动过程的关键机制：
+ *  - 代数（startSeq）：关闭/取消会使旧的启动尝试作废，陈旧结果不得写回状态；
+ *  - 单次启动锁（inflightStart）：同一模块同时只允许一次启动尝试；
+ *  - 启动超时（startTimeoutMs）：超时只放弃等待并锁定自动重试，悬挂的启动函数
+ *    无法终止（JS 没有强杀手段），重复尝试只会堆积。
+ *
+ * 依赖注入：构造时传入 ConnectCore 实例（只做类型引用，无运行时循环），
+ * 经由 core 访问日志出口（writeLog）、选项（options）、停机标记（stopping）与
+ * 数组注销（removeOwnerArrays）。
+ */
+import { ModuleContext } from './ModuleContext';
+import { LOG_TYPES } from './logFormat';
+import { loadModuleProgram } from '../module/loadModule';
+import type { ConnectCore } from './ConnectCore';
+import type { ModuleConfig, ModuleDefinition, ModuleSlot } from '../types';
+
+/** 判定是否为"人为/配置驱动"的启动：这类启动可解除启动超时后的自动重试锁定。 */
+function isManualishStart(reason?: string): boolean {
+  return (
+    reason === 'manual' ||
+    reason === 'cli' ||
+    reason === 'config-load' ||
+    reason === 'config-update' ||
+    reason === 'restart'
+  );
+}
+
+/** 模块启动原因 -> 人类可读描述（用于 module-start 日志的 message）。 */
+function describeStartReason(reason?: string): string {
+  if (!reason || reason === 'manual') return '手动启动';
+  if (reason === 'config-load') return '配置加载，启动事件已发生';
+  if (reason === 'config-update') return '配置更新，重新启动';
+  if (reason === 'restart') return '模块请求重启';
+  return `事件 ${reason} 匹配启动条件`;
+}
+
+export class ModuleManager {
+  /** 全部模块槽位：name -> 槽（一个 YAML 配置对应全部运行时状态）。 */
+  private readonly modules = new Map<string, ModuleSlot>();
+  /** 槽位序号：注册顺序即模块加载顺序（索引查找后按 seq 恢复顺序）。 */
+  private slotSeq = 0;
+
+  constructor(private readonly core: ConnectCore) {}
+
+  /** 全部槽位（按注册顺序）：重建比对索引与收集派发目标时使用。 */
+  slots(): ModuleSlot[] {
+    return [...this.modules.values()];
+  }
+
+  /** 按模块名取槽位（不存在返回 undefined）。 */
+  getSlot(name: string): ModuleSlot | undefined {
+    return this.modules.get(name);
+  }
+
+  /** 核心方法 1：启动模块。reason 为触发启动的事件名（用于日志）。
+   *  启动全程有"代数"护航：关闭/取消会使旧的启动尝试作废，陈旧结果不得写回状态。
+   *  同一模块同时只允许一次启动尝试；可配置超时（YAML 的 startTimeoutMs 或核心选项），
+   *  超时只放弃等待并记日志——悬挂的启动函数本身无法终止，同时锁住不再自动重试。
+   *  每次启动都从磁盘重新加载模块程序（重启因此拿到最新代码）。 */
+  async startModule(name: string, reason?: string): Promise<void> {
+    return this.startModuleCore(name, reason, undefined);
+  }
+
+  /** 请求自身重启：模块（或宿主）替换代码文件后调用本方法，核心先验证新代码再停旧启新。
+   *   - 新代码（loadModuleProgram）加载失败：记录 error、返回 false，旧实例继续运行不受影响
+   *     （验证不过就绝不更换，替换不会中途出错）；
+   *   - 加载成功：停止旧实例（其公开数组随拥有者消失）→ 用已验证的 def 直接启动新实例，
+   *     不重新加载（避免工厂函数重复求值产生的副作用）；
+   *   - 状态保存与恢复、版本管理都是模块自己的职责（核心不迁移任何模块变量、不记录版本）。
+   *  返回是否完成替换。 */
+  async reloadModule(name: string): Promise<boolean> {
+    const slot = this.modules.get(name);
+    if (!slot) throw new Error(`未知模块: ${name}`);
+    if (!this.core.started) throw new Error('核心未启动，不能重启模块');
+    if (this.core.stopping) {
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '核心正在关闭，跳过重启', { module: name, reason: 'core-stopping' });
+      return false;
+    }
+    if (slot.inflightStart) {
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块启动/重启进行中，跳过重启', {
+        module: name,
+        reason: 'restart-in-progress',
+      });
+      return false;
+    }
+    if (!slot.config.enabled) {
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块被禁用，跳过重启', { module: name, reason: 'disabled' });
+      return false;
+    }
+    // ① 先验证新代码：加载失败则保留旧实例继续运行（重启不会"换到一半坏掉"）
+    let def: ModuleDefinition;
+    try {
+      def = await loadModuleProgram(slot.config.file);
+    } catch (err) {
+      const em = err instanceof Error ? err.message : String(err);
+      this.core.writeLog(LOG_TYPES.ERROR, name, `重启失败: 新代码加载出错，保留旧实例继续运行: ${em}`, {
+        module: name,
+        error: em,
+      });
+      return false;
+    }
+    this.core.writeLog(LOG_TYPES.MODULE_RESTART, name, '模块请求重启：验证通过，停旧启新', {
+      module: name,
+      file: slot.config.file,
+    });
+    // ② 停止旧实例（stop() 返回即"已关闭"；数组随旧拥有者消失）
+    if (slot.status === 'running' || slot.status === 'starting') {
+      await this.stopModule(name);
+    }
+    // ③ 重新启动（用已验证的 def，不重复加载）
+    await this.startModuleCore(name, 'restart', def);
+    return true;
+  }
+
+  /** 启动的实际执行体：preloadedDef 提供时不再加载代码（重启复用已验证的 def）；
+   *  不提供则每次启动都从磁盘加载（配置更新/事件启动的常规路径）。 */
+  private async startModuleCore(name: string, reason: string | undefined, preloadedDef?: ModuleDefinition): Promise<void> {
+    const slot = this.modules.get(name);
+    if (!slot) throw new Error(`未知模块: ${name}`);
+    if (!this.core.started) throw new Error('核心未启动，不能启动模块');
+    if (this.core.stopping) {
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '核心正在关闭，跳过启动', { module: name, reason: 'core-stopping' });
+      return;
+    }
+    // 幂等：事件密集到达时同模块可能被多次点名，已在跑/正在启动/被禁用的直接跳过。
+    if (slot.status === 'running') {
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块已在运行，跳过启动', {
+        module: name,
+        reason: 'already-running',
+      });
+      return;
+    }
+    if (slot.inflightStart) {
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块启动进行中，跳过重复启动', {
+        module: name,
+        reason: 'start-in-progress',
+      });
+      return;
+    }
+    if (!slot.config.enabled) {
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块被禁用，跳过启动', {
+        module: name,
+        reason: 'disabled',
+      });
+      return;
+    }
+    if (slot.startTimedOut && !isManualishStart(reason)) {
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '此前启动超时已放弃自动重试，需手动启动或更新配置解锁', {
+        module: name,
+        reason: 'start-timeout-lock',
+      });
+      return;
+    }
+    slot.startSeq++;
+    const seq = slot.startSeq;
+    slot.status = 'starting';
+    const timeoutMs = Math.max(0, Math.round(slot.config.startTimeoutMs ?? this.core.options.defaultStartTimeoutMs ?? 0));
+    const run = (async () => {
+      try {
+        const def = preloadedDef ?? (await loadModuleProgram(slot.config.file));
+        const ctx = new ModuleContext(this.core, name, slot.config);
+        // 等待启动函数完成；配置了超时则只等到期限——超时不终止函数本身（JS 无法强杀），只是不再等它。
+        let timedOut = false;
+        let startError: unknown;
+        await new Promise<void>((resolve) => {
+          let settled = false;
+          const finish = (): void => {
+            if (!settled) {
+              settled = true;
+              resolve();
+            }
+          };
+          const timer = timeoutMs > 0 ? setTimeout(() => { timedOut = true; finish(); }, timeoutMs) : null;
+          Promise.resolve()
+            .then(() => def.start?.(ctx))
+            .then(finish, (e) => { startError = e; finish(); });
+          if (timer) timer.unref();
+        });
+        if (timedOut) {
+          if (seq !== slot.startSeq || this.core.stopping || !this.core.started) return; // 已被取消，结果作废
+          slot.startTimedOut = true;
+          slot.status = 'failed';
+          this.core.writeLog(LOG_TYPES.MODULE_START_TIMEOUT, name,
+            `启动超时：超过 ${timeoutMs}ms 未完成，放弃等待并标记失败（自动重试已锁定）`,
+            { module: name, timeoutMs });
+          return;
+        }
+        if (startError) throw startError;
+        // 启动完成前若已被关闭/取消：立即回收这次启动，不写入运行状态（防复活）。
+        if (seq !== slot.startSeq || this.core.stopping || !this.core.started) {
+          try { await def.stop?.(ctx); } catch { /* 回收失败忽略：核心都在关了 */ }
+          if (seq === slot.startSeq) slot.status = 'stopped';
+          return;
+        }
+        slot.def = def;
+        slot.ctx = ctx;
+        slot.status = 'running';
+        slot.startTimedOut = false;
+        this.core.writeLog(LOG_TYPES.MODULE_START, name, describeStartReason(reason), {
+          module: name,
+          file: slot.config.file,
+          reason: reason ?? 'manual',
+        });
+      } catch (err) {
+        if (seq !== slot.startSeq) return; // 陈旧尝试，结果作废
+        slot.status = 'failed';
+        const em = err instanceof Error ? err.message : String(err);
+        this.core.writeLog(LOG_TYPES.ERROR, name, `启动失败: ${em}`, {
+          module: name,
+          error: em,
+        });
+      } finally {
+        if (seq === slot.startSeq) slot.inflightStart = undefined;
+      }
+    })();
+    slot.inflightStart = run;
+    await run;
+  }
+
+  /** 核心方法 2：关闭单个模块。关闭后其公开的数组自动取消映射（自然消失，不留残档）。
+   *  停止一个模块：调用其 stop() 钩子并等待返回——模块的 stop() 返回即"已关闭"。
+   *  （全局停机由 stopAll() 并行等待 + 超时强制关闭；本方法用于 CLI 停止指令、
+   *  配置 enabled:false、以及模块请求重启时的停止环节。） */
+  async stopModule(name: string): Promise<void> {
+    const slot = this.modules.get(name);
+    if (!slot) throw new Error(`未知模块: ${name}`);
+    if (slot.status === 'starting') {
+      // 启动尚未完成：作废这次启动（代数+1，陈旧结果不得写回），真正的启动流程稍后自行收尾。
+      slot.startSeq++;
+      slot.status = 'stopped';
+      slot.inflightStart = undefined;
+      const cancelled = this.core.removeOwnerArrays(name);
+      this.core.writeLog(LOG_TYPES.MODULE_STOP, name, '启动过程中被取消，模块停止', {
+        module: name,
+        removedArrays: cancelled,
+      });
+      return;
+    }
+    if (slot.status !== 'running') {
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块未在运行，跳过关闭', {
+        module: name,
+        reason: 'not-running',
+      });
+      return;
+    }
+    try {
+      await slot.def?.stop?.(slot.ctx!);
+    } catch (err) {
+      this.core.writeLog(LOG_TYPES.ERROR, name, `关闭钩子失败: ${err instanceof Error ? err.message : String(err)}`, {
+        module: name,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    slot.status = 'stopped';
+    // 模块关闭 -> 其公开数组映射全部注销（数据随拥有者消失，不留残档）。
+    const removed = this.core.removeOwnerArrays(name);
+    this.core.writeLog(
+      LOG_TYPES.MODULE_STOP,
+      name,
+      removed.length > 0 ? `关闭模块，清理 ${removed.length} 个公共数组` : '关闭模块',
+      { module: name, removedArrays: removed },
+    );
+  }
+
+  /** 停止全部模块（核心停机时调用）。
+   *  ① 对每个运行模块调用 stop() 钩子——stop() 返回（resolve）即该模块"已关闭"；
+   *  ② 等待全部模块返回"已关闭"：全部返回 → 结束；超过 stopTimeoutMs 仍未返回 → 强制关闭
+   *    （哪个模块未返回会被记录在错误日志里）。 */
+  async stopAll(): Promise<void> {
+    const closing: Promise<void>[] = [];
+    for (const m of [...this.modules.values()]) {
+      if (m.status === 'stopped' || m.status === 'failed') continue;
+      if (m.status === 'starting') {
+        // 启动尚未完成：作废这次启动（代数+1，陈旧结果不得写回），真正的启动流程稍后自行收尾。
+        m.startSeq++;
+        m.status = 'stopped';
+        m.inflightStart = undefined;
+        const cancelled = this.core.removeOwnerArrays(m.name);
+        this.core.writeLog(LOG_TYPES.MODULE_STOP, m.name, '启动过程中被取消，模块停止', {
+          module: m.name,
+          removedArrays: cancelled,
+        });
+        continue;
+      }
+      const close = (async () => {
+        try {
+          await m.def?.stop?.(m.ctx!);
+        } catch (err) {
+          this.core.writeLog(LOG_TYPES.ERROR, m.name, `关闭钩子失败: ${err instanceof Error ? err.message : String(err)}`, {
+            module: m.name,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        m.status = 'stopped';
+        // 模块关闭 -> 其公开数组映射全部注销（数据随拥有者消失，不留残档）。
+        const removed = this.core.removeOwnerArrays(m.name);
+        this.core.writeLog(
+          LOG_TYPES.MODULE_STOP,
+          m.name,
+          removed.length > 0 ? `关闭模块，清理 ${removed.length} 个公共数组` : '关闭模块',
+          { module: m.name, removedArrays: removed },
+        );
+      })();
+      closing.push(close);
+    }
+    // 全部"已关闭"承诺兑现 → 结束；超时 → 强制关闭
+    const allClosed = Promise.all(closing).then(() => true).catch(() => true);
+    const timeout = new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), this.core.options.stopTimeoutMs);
+      timer.unref?.();
+    });
+    const closed = await Promise.race([allClosed, timeout]);
+    if (!closed) {
+      const pending = [...this.modules.values()].filter((m) => m.status === 'running').map((m) => m.name);
+      this.core.writeLog(
+        LOG_TYPES.ERROR,
+        'core',
+        `停止超时：${this.core.options.stopTimeoutMs}ms 内还有模块未返回"已关闭"，强制关闭` + (pending.length > 0 ? `：${pending.join(', ')}` : ''),
+        { timeoutMs: this.core.options.stopTimeoutMs, pending },
+      );
+    }
+  }
+
+  /** 配置加载：注册新模块槽位。模块名已被其他 YAML 占用时拒绝（返回 false）——
+   *  名字是模块的全局身份，允许顶替等于允许"伪装成同名模块"上线（防注入）。
+   *  注册只维护槽位表；索引重建与 config-load 日志由调用方（ConnectCore）负责。 */
+  register(cfg: ModuleConfig, yamlPath: string): boolean {
+    if (this.modules.has(cfg.name)) return false;
+    this.modules.set(cfg.name, {
+      name: cfg.name,
+      config: cfg,
+      yamlPath,
+      status: 'stopped',
+      seq: ++this.slotSeq,
+      startSeq: 0,
+    });
+    return true;
+  }
+
+  /** 配置更新：应用新配置到槽位（配置层生效，模块实例与代码不动）。
+   *   - 更新槽位注册（config 字段）与启动代数（旧代启动全部作废）；
+   *   - 运行中的模块：刷新其 ctx.config 引用（模块自行决定何时读取/如何应用新配置）；
+   *   - 别的文件来抢同名模块名（yamlPath 不同）返回 false —— 拒绝顶替，防同名伪装。
+   *  索引重建、config-update 日志与 enabled:false 的停止决策由调用方（ConnectCore）负责。 */
+  async applyUpdate(cfg: ModuleConfig, yamlPath: string): Promise<boolean> {
+    const prev = this.modules.get(cfg.name);
+    // 同名不同文件：本文件不是该模块名当前归属的 YAML，拒绝应用（模块名全局唯一，先注册者保留）
+    if (prev && prev.yamlPath !== yamlPath) return false;
+    const wasRunning = prev?.status === 'running';
+    this.modules.set(cfg.name, {
+      name: cfg.name,
+      config: cfg,
+      yamlPath,
+      status: wasRunning ? 'running' : prev?.status ?? 'stopped',
+      def: prev?.def,
+      ctx: prev?.ctx,
+      seq: prev?.seq ?? ++this.slotSeq,
+      startSeq: (prev?.startSeq ?? 0) + 1, // 配置更新使旧代启动全部作废
+    });
+    // 运行中的模块：只刷新配置引用，不重启、不重载代码
+    if (wasRunning && prev?.ctx) {
+      prev.ctx.refreshConfig(cfg);
+    }
+    return true;
+  }
+
+  /** 配置移除：停止运行中的模块后删除槽位。
+   *  索引重建与 config-remove 日志由调用方（ConnectCore）负责。 */
+  async remove(name: string): Promise<void> {
+    const slot = this.modules.get(name);
+    if (!slot) return;
+    if (slot.status === 'running') await this.stopModule(name);
+    this.modules.delete(name);
+  }
+}

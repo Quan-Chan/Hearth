@@ -1,5 +1,5 @@
 /**
- * MatchIndex 单元测试：与 anyEventMatches 全量比对逐字对拍（语义零变化），
+ * MatchIndex 单元测试：与 anyEventMatches 全量比对逐字对拍（匹配规则零变化），
  * 覆盖精确、通配、问号、正则特殊字符与多槽共享。
  */
 import { test } from 'node:test';
@@ -34,7 +34,7 @@ function checkAgainstBruteForce(patterns: string[], eventNames: string[]): void 
   }
 }
 
-test('索引与全量比对语义逐字一致（精确/通配/问号/正则特殊字符/全通配）', () => {
+test('索引与全量比对匹配结果逐字一致（精确/通配/问号/正则特殊字符/全通配）', () => {
   const rand = mulberry32(42);
   const patterns = [
     'core:startup', // 精确
@@ -58,7 +58,7 @@ test('索引与全量比对语义逐字一致（精确/通配/问号/正则特�
   checkAgainstBruteForce(patterns, eventNames);
 });
 
-test('大量随机模式对拍：精确表与通配列表的划分不改变匹配语义', () => {
+test('大量随机模式对拍：精确表与通配列表的划分不改变匹配结果', () => {
   const rand = mulberry32(2026);
   const patterns: string[] = [];
   for (let i = 0; i < 200; i++) {

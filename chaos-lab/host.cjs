@@ -1,5 +1,5 @@
 'use strict';
-/* 混沌实验宿主：子进程内启动 Connect-Core，注入分阶段混乱，采集指标，最后优雅停机。 */
+/* 混沌实验宿主：子进程内启动 Connect-Core，注入分阶段混乱，采集指标，最后正常停机。 */
 const path = require('path');
 const fs = require('fs');
 const { monitorEventLoopDelay } = require('perf_hooks');
@@ -117,7 +117,7 @@ async function main() {
     try { const s = core.array('sponge-stats'); if (s && s[0] > seen) seen = s[0]; } catch (e) {}
     if (seen > lastSeen) { lastSeen = seen; lastGrewAt = Date.now(); }
     const ms = core.listModules();
-    say({ k: 'stats', t: elapsed(), rss: process.memoryUsage().rss, heap: process.memoryUsage().heapUsed, lagMs: lag.mean / 1e6, running: ms.filter(function (m) { return m.status === 'running'; }).length, failed: ms.filter(function (m) { return m.status === 'failed'; }).length, arrays: core.listArrays().length, seen: lastSeen, phase: saboteur.phase, ops: saboteur.ops });
+    say({ k: 'stats', t: elapsed(), rss: process.memoryUsage().rss, heap: process.memoryUsage().heapUsed, lagMs: lag.mean / 1e6, running: ms.filter(function (m) { return m.status === 'running'; }).length, failed: ms.filter(function (m) { return m.status === 'failed'; }).length, arrays: Object.keys(core.array('*')).length, seen: lastSeen, phase: saboteur.phase, ops: saboteur.ops });
   }, 2000);
 
   let spongeProbeDeadNoted = false;
@@ -130,9 +130,9 @@ async function main() {
       clearInterval(statsTimer); clearInterval(wedgeCheck); if (saboteur.timer) clearInterval(saboteur.timer);
       process.exit(5);
     } else {
-      // 海绵本身已被混乱打掉：计数器不可用，交回硬超时兜底
+      // 海绵本身已被混乱打掉：计数器不可用，交回硬超时强制关闭
       lastGrewAt = Date.now();
-      if (!spongeProbeDeadNoted) { spongeProbeDeadNoted = true; say({ k: 'note', t: elapsed(), note: '活性探针(海绵)已下线，仅剩硬超时兜底' }); }
+      if (!spongeProbeDeadNoted) { spongeProbeDeadNoted = true; say({ k: 'note', t: elapsed(), note: '活性探针(海绵)已下线，仅剩硬超时强制关闭' }); }
     }
   }, 5000);
 
@@ -149,7 +149,7 @@ async function main() {
     const stopped = await Promise.race([core.stop().then(function () { return 'ok'; }), timeout]);
     clearInterval(statsTimer); clearInterval(wedgeCheck); if (saboteur.timer) clearInterval(saboteur.timer);
     if (stopped === 'ok') { say({ k: 'core-stopped', t: elapsed(), tookMs: Date.now() - began }); setTimeout(function () { process.exit(0); }, 300); }
-    else { say({ k: 'stop-hang', t: elapsed(), note: '优雅停机 20 秒未完成' }); process.exit(6); }
+    else { say({ k: 'stop-hang', t: elapsed(), note: '正常停机 20 秒未完成' }); process.exit(6); }
   }
   setTimeout(function () { gracefulStop('90 秒混沌窗口结束'); }, 90000);
   setTimeout(function () { say({ k: 'hard-timeout', t: elapsed() }); process.exit(4); }, 130000);

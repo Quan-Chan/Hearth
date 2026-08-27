@@ -16,7 +16,6 @@ module.exports = {
       const cmds = [
         { cmd: 'stop', args: { module: Math.random() < 0.5 ? 'duelist-a' : 'duelist-b' } },
         { cmd: 'start', args: { module: Math.random() < 0.5 ? 'duelist-a' : 'duelist-b' } },
-        { cmd: 'index', args: { action: 'budget', mb: n % 8 === 0 ? 0.5 : 64 } },
         { cmd: 'state', args: {} },
         { cmd: 'no-such-cmd', args: { x: 1 } },
         { cmd: 'event', args: { name: 'impersonated:' + n, data: { via: 'cli' } } },

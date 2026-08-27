@@ -54,7 +54,7 @@ test('停止协议：模块超过 stopTimeoutMs 未返回"已关闭" -> 核心�
     const t0 = Date.now();
     await core.stop();
     const elapsed = Date.now() - t0;
-    // 未返回的模块被超时兜底：停机仍完成，且记了 error 指明谁没回来
+    // 未返回的模块被超时强制关闭：停机仍完成，且记了 error 指明谁没回来
     assert.ok(elapsed >= 280 && elapsed < 2000, '超时后强制关闭（实际 ' + elapsed + 'ms）');
     assert.ok(core.log.all().some((e) => e.type === 'error' && String(e.message).includes('停止超时') && String(e.message).includes('hang')), 'error 日志指明未返回的模块');
     assert.equal(core.started, false);

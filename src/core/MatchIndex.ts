@@ -4,7 +4,7 @@
  * 两个概念：
  *  - 精确表：无通配符的条件，事件名相等即命中（字符串比较，零正则，O(1)）；
  *  - 通配列表：含通配符的条件，事件到达时逐条正则比对。
- * 语义与 eventMatches 逐字一致（见 EventMatcher.ts）：这里只决定"测哪些条件"，
+ * 匹配结果与 eventMatches 逐字一致（见 EventMatcher.ts）：这里只决定"测哪些条件"，
  * 不改变"怎么测"。精确条件永远 O(1) 命中；通配条件逐条测。
  */
 import { patternToRegExp } from './EventMatcher';

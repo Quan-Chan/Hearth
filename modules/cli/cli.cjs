@@ -3,7 +3,7 @@
  * 它做的事只有两件：把命令用 sendTo 直接发给核心；核心把结果直接回传，onMessage 收到后打印。
  * 外加一个自己读日志文件的 grep 小功能。
  *
- * 信息直达（不再用公共数组/门铃）：
+ * 信息直达（不走公共数组）：
  *  - 发送：ctx.sendTo('core', { cmd, args })        —— 直接发给核心执行
  *  - 接收：onMessage(ctx, message)                   —— 核心直接把结果回传（message.data = { cmd, ok, result, error }）
  * 任何模块用同样的接口调核心都不互相污染：结果只投递给发起方自己（source = 谁发的就回给谁）。

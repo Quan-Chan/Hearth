@@ -1,5 +1,5 @@
 'use strict';
-/* 混沌测试台架：清场 → 启动宿主(stdio inherit) → 轮询事件标记 → 判定结局 → 分析事件流水。 */
+/* 混沌测试台架：清场 → 启动宿主(stdio inherit) → 轮询事件标记 → 判定结局 → 分析日志时间线。 */
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -76,7 +76,7 @@ async function main() {
   if (!fs.existsSync(path.join(LAB, '..', 'dist', 'index.js'))) { console.error('dist/index.js 不存在，请先构建'); process.exit(1); }
   console.log('[run] 1) 清理现场...');
   clean();
-  console.log('[run] 2) 启动混沌宿主（90 秒混乱窗口 + 优雅停机）...');
+  console.log('[run] 2) 启动混沌宿主（90 秒混乱窗口 + 正常停机）...');
   const child = spawn(process.execPath, ['host.cjs'], { cwd: LAB, env: process.env, stdio: 'inherit' });
   let markerCount = 0;
   let coreStopped = null, wedged = null, stopHang = null, hostFatal = null;
@@ -103,20 +103,20 @@ async function main() {
       for (const m of r.markers) { if (m.k === 'core-stopped') coreStopped = m; if (m.k === 'wedged') wedged = m; if (m.k === 'stop-hang') stopHang = m; if (m.k === 'host-fatal') hostFatal = m; }
       if (hostFatal) return resolve({ verdict: 'CRASHED', why: '宿主启动即致命错误: ' + String(hostFatal.error).slice(0, 200) });
       if (signal) return resolve({ verdict: 'CRASHED', why: '被信号终止: ' + signal });
-      if (code === 0 && coreStopped) return resolve({ verdict: 'STABLE', why: '全程 90 秒混沌中存活，且完成完整优雅停机', exitCode: code });
+      if (code === 0 && coreStopped) return resolve({ verdict: 'STABLE', why: '全程 90 秒混沌中存活，且完成完整正常停机', exitCode: code });
       if (code === 0) return resolve({ verdict: 'SUSPECT', why: '退出码 0 但未见 core-stopped 标记', exitCode: code });
       if (code === 5 || wedged) return resolve({ verdict: 'WEDGED', why: '事件循环失去响应（海绵心跳停滞超 20 秒）', exitCode: code });
-      if (code === 6 || stopHang) return resolve({ verdict: 'HANG-SHUTDOWN', why: '优雅停机 20 秒未完成', exitCode: code });
+      if (code === 6 || stopHang) return resolve({ verdict: 'HANG-SHUTDOWN', why: '正常停机 20 秒未完成', exitCode: code });
       return resolve({ verdict: 'CRASHED', why: '异常退出码 ' + code + (hostFatal ? '' : ''), exitCode: code });
     });
   });
-  console.log('[run] 3) 分析事件流水...');
+  console.log('[run] 3) 分析日志时间线...');
   const analysis = await analyzeLog();
   console.log('');
   console.log('==================== 判定 ====================');
   console.log('结局: ' + result.verdict + ' —— ' + result.why);
   console.log('');
-  console.log('==================== 流水统计 ====================');
+  console.log('==================== 日志统计 ====================');
   if (analysis.note) { console.log(analysis.note); } else {
     console.log('日志: ' + analysis.logLines + ' 行 / ' + analysis.logMB + ' MB / 跨度 ' + analysis.span);
     console.log('模块: 启动 ' + analysis.moduleStart + ' 次, 关闭 ' + analysis.moduleStop + ' 次, 跳过 ' + analysis.moduleSkip + ' 次');

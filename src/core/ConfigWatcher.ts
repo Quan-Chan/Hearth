@@ -2,7 +2,7 @@
  * 模块文件夹监听器：框架核心始终监听模块文件夹（**不递归** —— 只识别模块目录本层与
  * 『每个模块一个子文件夹』层；不深入子目录，避免把模块内部嵌套的子核心/子模块配置
  * 文件误认成本核心的模块，造成不可预测的文件冲突）。
- * 模块布局约定：每个模块一个文件夹，文件夹内放 <name>.yaml + <name>.cjs；
+ * 模块布局规则：每个模块一个文件夹，文件夹内放 <name>.yaml + <name>.cjs；
  * 也支持把 <name>.yaml 直接放在模块目录顶层（扁平，测试常用）。
  *  - 新的 YAML 配置文件出现   -> onLoad
  *  - 已有 YAML 文件内容变化   -> onUpdate
@@ -10,8 +10,8 @@
  * 检测策略（性能）：稳态每轮只 statSync（mtimeMs+size+ctimeMs 指纹），指纹不变的文件
  * 直接跳过、不读内容；指纹变化才 readFileSync + sha1 二次确认（同内容只改 mtime 的
  * touch 不触发 onUpdate）；哈希真变才解析 YAML。解析失败不更新指纹 -> 下轮重试（自愈）。
- * 为什么轮询而不是 fs.watch：fs.watch 在 Windows/macOS 上的事件丢失与语义差异问题
- * 多（保存中间态、编辑器原子替换都可能漏报/误报），轮询 + 内容哈希每帧给出确定的结论，
+ * 为什么轮询而不是 fs.watch：fs.watch 在 Windows/macOS 上的事件丢失与行为差异问题
+ * 多（保存中间态、编辑器替换文件都可能漏报/误报），轮询 + 内容哈希每帧给出确定的结论，
  * 换来的是跨平台一致可靠；代价只是一个 200ms 的 stat 心跳，稳态开销可忽略。
  */
 import * as fs from 'fs';
@@ -150,7 +150,7 @@ export class ConfigWatcher {
       }
       // 阶段3：对解析成功的文件触发回调。消费方（核心）可拒绝注册/更新（返回 false）：
       //   此时本文件不记账（known/stats 都不动），下轮扫描会重新检查并再次请求，
-      //   与坏 YAML 的"每轮重试"同语义——拒绝持续可见直到问题被修复。
+      //   与坏 YAML 的"每轮重试"同规则——拒绝持续可见直到问题被修复。
       for (const c of candidates) {
         const prev = this.known.get(c.cfg.name);
         if (!prev) {

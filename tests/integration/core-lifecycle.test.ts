@@ -88,7 +88,7 @@ test('启动核心 == 启动整个软件：core:startup 自动启动匹配模块
     assert.equal(core.getModule('lazy')!.status, 'stopped'); // 启动事件未出现
     // 启动时暴露的数组可用
     assert.deepEqual(arr(core as any, 'public:boot:marks'), ['started']);
-    // 事件流水：核心启动事件原样记录（无模块监听 -> 记录为 event-drop，符合新语义）
+    // 日志：核心启动事件原样记录（无模块监听 -> 记录为 event-drop）
     const drops = core.log.byType('event-drop');
     assert.equal(drops[0].event, 'core:startup');
     assert.equal(drops[0].source, 'core');

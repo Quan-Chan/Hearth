@@ -6,7 +6,7 @@ const FACTS = [
   { fact: '轮询间隔默认 200ms', doc: ['docs/使用/宿主集成接口.md', '| pollIntervalMs | 200 |'], src: ['src/core/ConnectCore.ts', 'pollIntervalMs ?? 200'] },
   { fact: '日志内存上限 20000', doc: ['docs/使用/宿主集成接口.md', '| maxLogMemoryEntries | 20000 |'], src: ['src/core/ConnectCore.ts', 'DEFAULT_MAX_LOG_MEMORY_ENTRIES = 20000'] },
   { fact: '停机上限 20000', doc: ['docs/使用/宿主集成接口.md', '| stopTimeoutMs | 20000 |'], src: ['src/core/ConnectCore.ts', 'DEFAULT_STOP_TIMEOUT_MS = 20000'] },
-  { fact: '解锁途径五种', doc: ['docs/使用/重启与状态.md', '可解除'], src: ['src/core/ConnectCore.ts', 'isManualishStart'] },
+  { fact: '解锁途径五种', doc: ['docs/使用/重启与状态.md', '可解除'], src: ['src/core/ModuleManager.ts', 'isManualishStart'] },
   { fact: '日志轮转 128KB', doc: ['docs/使用/日志与命令行.md', '128KB'], src: ['src/core/EventStreamLog.ts', 'ROTATE_SIZE_LIMIT_BYTES = 128'] },
   { fact: '展示截断 2048 字符', doc: ['docs/实现/日志体系.md', '2048'], src: ['src/core/logFormat.ts', 'DISPLAY_TRUNCATE_CHARS = 2048'] },
   { fact: '15 种日志类型', doc: ['docs/使用/日志与命令行.md', 'module-skip、module-start-timeout'], src: ['src/core/logFormat.ts', "MODULE_RESTART: 'module-restart'"] },
@@ -15,7 +15,7 @@ const FACTS = [
   { fact: '钩子签名两参数', doc: ['docs/使用/模块程序.md', 'onEvent(ctx, event)'], src: ['src/types.ts', 'onEvent?(ctx: ModuleContext, event: CoreEvent)'] },
   { fact: '数组注册表规则', doc: ['docs/实现/公共数组.md', 'removeOwner'], src: ['src/core/ArrayRegistry.ts', 'removeOwner(owner: string)'] },
   { fact: '启动事件名 core:startup', doc: ['docs/实现/场景/cold-start.md', 'core:startup'], src: ['src/core/ConnectCore.ts', "sendEvent('startup'"] },
-  { fact: '停机调用模块停止钩子', doc: ['docs/实现/场景/shutdown.md', '调用 stop()'], src: ['src/core/ConnectCore.ts', 'def?.stop?.'] },
+  { fact: '停机调用模块停止钩子', doc: ['docs/实现/场景/shutdown.md', '调用 stop()'], src: ['src/core/ModuleManager.ts', 'def?.stop?.'] },
   { fact: '通配符规则', doc: ['docs/使用/模块配置.md', '* 匹配任意字符序列'], src: ['src/core/EventMatcher.ts', 'patternToRegExp'] },
   { fact: '目录只收集两层', doc: ['docs/实现/配置监听.md', '只收集两层'], src: ['src/core/ConfigWatcher.ts', 'collectYamlFiles'] },
 ];
