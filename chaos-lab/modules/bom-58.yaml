@@ -1,0 +1,4 @@
+﻿name: bom-58
+file: ../assets/ghost.cjs
+startEvents:
+  - "never:bom"

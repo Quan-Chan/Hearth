@@ -2,11 +2,11 @@
 module.exports = {
   name: 'stats',
   start(ctx) {
-    ctx.exposeArray('chat:stats', [{ key: 'events', count: 0 }]);
+    ctx.exposeArray('stats', [{ key: 'events', count: 0 }]);
   },
   onEvent(ctx) {
-    const stats = ctx.array('chat:stats');
+    const stats = ctx.array('stats');
     const idx = stats.findIndex((s) => s.key === 'events');
-    ctx.array('chat:stats')[idx] = { key: 'events', count: stats[idx].count + 1 };
+    ctx.array('stats')[idx] = { key: 'events', count: stats[idx].count + 1 };
   },
 };

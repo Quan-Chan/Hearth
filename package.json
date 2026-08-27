@@ -20,6 +20,7 @@
     "test:unit": "tsc -p tsconfig.test.json && node --test-isolation=none --test \".test-build/tests/unit/**/*.test.js\"",
     "test:integration": "tsc -p tsconfig.test.json && node --test-isolation=none --test \".test-build/tests/integration/**/*.test.js\"",
     "test:apps": "tsc -p tsconfig.test.json && node --test-isolation=none --test \".test-build/tests/apps/**/*.test.js\"",
+    "docs:check": "node scripts/verify-docs.mjs && node scripts/check-doc-duplicates.mjs",
     "bench": "npm run build && node benchmarks/perf.js"
   },
   "dependencies": {
@@ -30,5 +31,5 @@
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   },
-  "license": "MIT"
+  "license": "Apache-2.0"
 }

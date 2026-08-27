@@ -1,0 +1,6 @@
+name: e-freezer
+file: ./e-freezer.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "freeze"

@@ -3,4 +3,4 @@ file: ./cooler.cjs
 startEvents:
   - "core:startup"
 listen:
-  - "home:cooling"
+  - "*:home:cooling"

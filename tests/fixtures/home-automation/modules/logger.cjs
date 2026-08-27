@@ -2,9 +2,9 @@
 module.exports = {
   name: 'logger',
   start(ctx) {
-    ctx.exposeArray('home:log', []);
+    ctx.exposeArray('events', []);
   },
   onEvent(ctx, event) {
-    ctx.array('home:log').push({ event: event.name, data: event.data, at: Date.now() });
+    ctx.array('events').push({ event: event.name, data: event.data, at: Date.now() });
   },
 };

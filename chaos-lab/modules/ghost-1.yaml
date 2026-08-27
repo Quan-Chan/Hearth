@@ -1,0 +1,6 @@
+name: ghost-1
+file: ../assets/ghost.cjs
+startEvents:
+  - "tick"
+listen:
+  - "tick"

@@ -14,15 +14,13 @@ export { ArrayRegistry } from './core/ArrayRegistry';
 export { eventMatches, anyEventMatches, patternToRegExp } from './core/EventMatcher';
 export { ConfigWatcher, parseModuleConfig } from './core/ConfigWatcher';
 export { MatchIndex } from './core/MatchIndex';
-export type { MatchIndexStats } from './core/MatchIndex';
-export { LOG_TYPES, categoryOf, formatLogEntry } from './core/logFormat';
+export { LOG_TYPES, categoryOf, formatLogEntry, truncateDisplay } from './core/logFormat';
 export type { LogType, LogCategory } from './core/logFormat';
 export { loadModuleProgram } from './module/loadModule';
 export type {
   ConnectCoreOptions,
   CoreEvent,
   DirectedMessage,
-  EventHead,
   LogEntry,
   ModuleConfig,
   ModuleDefinition,

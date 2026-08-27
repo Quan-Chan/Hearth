@@ -1,0 +1,4 @@
+name: missing-10
+file: ./no-such-10.cjs
+startEvents:
+  - "tick"

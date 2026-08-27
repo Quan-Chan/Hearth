@@ -1,59 +1,58 @@
 /**
- * CLI 门铃协议测试（极简版）：事件不带 id，核心执行 cli:commands 里第一条未处理的指令。
- *
- * 协议：cli:commands（内容）-> cli:request（门铃）-> 执行 -> core:results（结果）-> cli:done（门铃）
- * 覆盖：生成事件 / 启动 / 关闭 / 定向发送 / 广播 / 状态查询 / 未知指令容错 / 无指令容错 / exit。
+ * CLI 定向指令测试：sendTo('core', { cmd, args }) 发指令，核心执行后经定向信息回传结果。
+ * 覆盖：生成事件 / 启动 / 关闭 / 定向发送 / 广播 / 状态查询 / 未知指令容错 / exit。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ConnectCore } from '../../src/core/ConnectCore';
-import { mkTmpDir, rmDir, yamlFor } from '../helpers';
+import { mkTmpDir, rmDir, waitFor, arr, yamlFor } from '../helpers';
 
-const CMD_ARRAY = 'cli:commands';
-const RESULT_ARRAY = 'core:results';
+/** 测试接收者模块：接收核心回传的指令结果。 */
+const TESTER = `
+module.exports = {
+  name: 'tester',
+  start(ctx) { ctx.exposeArray('results', []); },
+  onMessage(ctx, message) { ctx.array('results').push(message.data); },
+};
+`;
 
 function makeDir(dir: string): void {
   // echo：不监听任何事件（listen: []），只能被定向发送
-  fs.writeFileSync(path.join(dir, 'echo.cjs'), `module.exports = { name: 'echo', start(ctx){ ctx.exposeArray('echo:out', []); }, onEvent(ctx, event){ ctx.array('echo:out').push(event.name); } };`);
+  fs.writeFileSync(path.join(dir, 'echo.cjs'), `module.exports = { name: 'echo', start(ctx){ ctx.exposeArray('out', []); }, onEvent(ctx, event){ ctx.array('out').push(event.name); } };`);
   fs.writeFileSync(path.join(dir, 'echo.yaml'), 'name: echo\nfile: ./echo.cjs\nstartEvents: ["core:startup"]\nlisten: []\n');
-  // listener：正常监听
-  fs.writeFileSync(path.join(dir, 'listener.cjs'), `module.exports = { name: 'listener', start(ctx){ ctx.exposeArray('listener:got', []); }, onEvent(ctx, event){ ctx.array('listener:got').push(event.name); } };`);
-  fs.writeFileSync(path.join(dir, 'listener.yaml'), yamlFor('listener', { startEvents: ['core:startup'], listen: ['hello', 'ping:*'] }));
+  // listener：正常监听（任意来源）
+  fs.writeFileSync(path.join(dir, 'listener.cjs'), `module.exports = { name: 'listener', start(ctx){ ctx.exposeArray('got', []); }, onEvent(ctx, event){ ctx.array('got').push(event.name); } };`);
+  fs.writeFileSync(path.join(dir, 'listener.yaml'), yamlFor('listener', { startEvents: ['core:startup'], listen: ['*:hello', '*:ping:*'] }));
   // lazy：启动事件从不出现 -> 停着，只能被 start 指令起来
-  fs.writeFileSync(path.join(dir, 'lazy.cjs'), `module.exports = { name: 'lazy', start(ctx){ ctx.exposeArray('lazy:mark', ['started']); }, onEvent(){} };`);
+  fs.writeFileSync(path.join(dir, 'lazy.cjs'), `module.exports = { name: 'lazy', start(ctx){ ctx.exposeArray('mark', ['started']); }, onEvent(){} };`);
   fs.writeFileSync(path.join(dir, 'lazy.yaml'), yamlFor('lazy', { startEvents: ['rare:start'], listen: ['rare:start'] }));
+  fs.writeFileSync(path.join(dir, 'tester.cjs'), TESTER);
+  fs.writeFileSync(path.join(dir, 'tester.yaml'), yamlFor('tester', { startEvents: ['core:startup'] }));
 }
 
-/** 提交一条指令：写数组 + 响门铃（事件不带 id）。 */
-async function ask(core: ConnectCore, cmd: string, args: Record<string, unknown> = {}): Promise<void> {
-  core.array(CMD_ARRAY).push({ cmd, args });
-  await core.sendEvent('cli:request', {}, 'cli');
+function resultsArr(core: ConnectCore): any[] {
+  return arr<any[]>(core as any, 'public:tester:results');
 }
 
-/** 结果数组最新一条。 */
-function lastResult(core: ConnectCore): any {
-  const arr = core.array(RESULT_ARRAY);
-  return arr[arr.length - 1];
+/** 发一条指令（发起方为 tester 模块），等待并返回最新结果。 */
+async function ask(core: ConnectCore, cmd: string, args: Record<string, unknown> = {}): Promise<any> {
+  const before = resultsArr(core).length;
+  await core.sendTo('core', { cmd, args }, 'tester');
+  await waitFor(() => resultsArr(core).length > before);
+  return resultsArr(core)[resultsArr(core).length - 1];
 }
 
-function setup(core: ConnectCore): void {
-  core.exposeArray(CMD_ARRAY, 'cli', []); // 模拟 CLI 的命令信箱
-}
-
-test('event 指令：生成自定义事件，结果入 core:results', async () => {
+test('event 指令：生成自定义事件（来源段为发起方）', async () => {
   const dir = mkTmpDir('cli');
   try {
     makeDir(dir);
     const core = new ConnectCore({ moduleDir: dir, watch: false });
     await core.start();
-    setup(core);
-    await ask(core, 'event', { name: 'hello', data: { who: 'world' } });
-    assert.deepEqual(core.array('listener:got'), ['hello']);
-    assert.equal(lastResult(core).cmd, 'event');
-    assert.equal(lastResult(core).ok, true);
-    assert.equal(core.array(CMD_ARRAY)[0].status, 'done');
+    const r = await ask(core, 'event', { name: 'hello', data: { who: 'world' } });
+    assert.equal(r.ok, true);
+    assert.deepEqual(arr(core as any, 'public:listener:got'), ['tester:hello']);
     assert.ok(core.log.byType('cli-command').some((l) => l.command === 'event'));
     await core.stop();
   } finally { rmDir(dir); }
@@ -65,11 +64,11 @@ test('start 指令：无需事件也能启动模块', async () => {
     makeDir(dir);
     const core = new ConnectCore({ moduleDir: dir, watch: false });
     await core.start();
-    setup(core);
     assert.equal(core.getModule('lazy')!.status, 'stopped');
-    await ask(core, 'start', { module: 'lazy' });
+    const r = await ask(core, 'start', { module: 'lazy' });
+    assert.equal(r.ok, true);
     assert.equal(core.getModule('lazy')!.status, 'running');
-    assert.deepEqual(core.array('lazy:mark'), ['started']);
+    assert.deepEqual(arr(core as any, 'public:lazy:mark'), ['started']);
     await core.stop();
   } finally { rmDir(dir); }
 });
@@ -80,10 +79,10 @@ test('stop 指令：关闭模块，其数组随之消失', async () => {
     makeDir(dir);
     const core = new ConnectCore({ moduleDir: dir, watch: false });
     await core.start();
-    setup(core);
-    await ask(core, 'stop', { module: 'echo' });
+    const r = await ask(core, 'stop', { module: 'echo' });
+    assert.equal(r.ok, true);
     assert.equal(core.getModule('echo')!.status, 'stopped');
-    assert.ok(!core.listArrays().includes('echo:out'));
+    assert.throws(() => (core.array as any)('public:echo:out'), /不存在/);
     await core.stop();
   } finally { rmDir(dir); }
 });
@@ -94,13 +93,12 @@ test('send 指令：定向投递给不监听的模块，且不影响他人', asy
     makeDir(dir);
     const core = new ConnectCore({ moduleDir: dir, watch: false });
     await core.start();
-    setup(core);
-    await core.sendEvent('direct:x', {}, 'tester'); // 普通路由：无人监听 -> 丢弃
-    assert.deepEqual(core.array('echo:out'), []);
-    await ask(core, 'send', { targets: ['echo'], name: 'direct:x', data: { v: 2 } });
-    assert.deepEqual(core.array('echo:out'), ['direct:x']);
-    assert.deepEqual(core.array('listener:got'), []);
-    assert.deepEqual(lastResult(core).result.recipients, ['echo']);
+    await core.sendEvent('direct:x', {}, 'tester'); // 普通路由：无监听声明 -> 丢弃
+    assert.deepEqual(arr(core as any, 'public:echo:out'), []);
+    const r = await ask(core, 'send', { targets: ['echo'], name: 'direct:x', data: { v: 2 } });
+    assert.deepEqual(arr(core as any, 'public:echo:out'), ['tester:direct:x']);
+    assert.deepEqual(arr(core as any, 'public:listener:got'), []);
+    assert.deepEqual(r.result.recipients, ['echo']);
     await core.stop();
   } finally { rmDir(dir); }
 });
@@ -111,10 +109,10 @@ test('send 指令 * 广播：发给所有运行中且有 onEvent 的模块', asy
     makeDir(dir);
     const core = new ConnectCore({ moduleDir: dir, watch: false });
     await core.start();
-    setup(core);
-    await ask(core, 'send', { targets: '*', name: 'all:go', data: {} });
-    assert.deepEqual(core.array('echo:out'), ['all:go']);
-    assert.deepEqual(core.array('listener:got'), ['all:go']);
+    const r = await ask(core, 'send', { targets: '*', name: 'all:go', data: {} });
+    assert.equal(r.ok, true);
+    assert.deepEqual(arr(core as any, 'public:echo:out'), ['tester:all:go']);
+    assert.deepEqual(arr(core as any, 'public:listener:got'), ['tester:all:go']);
     await core.stop();
   } finally { rmDir(dir); }
 });
@@ -125,102 +123,37 @@ test('state 指令：结果携带模块与公共数组清单', async () => {
     makeDir(dir);
     const core = new ConnectCore({ moduleDir: dir, watch: false });
     await core.start();
-    setup(core);
-    await ask(core, 'state', {});
-    const r = lastResult(core).result;
-    assert.deepEqual(r.modules.map((m: any) => m.name).sort(), ['echo', 'lazy', 'listener']);
-    assert.equal(r.modules.find((m: any) => m.name === 'lazy').status, 'stopped');
-    assert.ok(r.arrays.includes('core:results'));
+    const r = await ask(core, 'state', {});
+    assert.deepEqual(r.result.modules.map((m: any) => m.name).sort(), ['echo', 'lazy', 'listener', 'tester']);
+    assert.equal(r.result.modules.find((m: any) => m.name === 'lazy').status, 'stopped');
+    assert.ok(r.result.arrays.includes('public:tester:results'));
     await core.stop();
   } finally { rmDir(dir); }
 });
 
-test('未知指令：结果 ok:false + error，且该条目标记为 error，核心继续可用', async () => {
+test('未知指令：结果 ok:false + error，核心继续可用', async () => {
   const dir = mkTmpDir('cli');
   try {
     makeDir(dir);
     const core = new ConnectCore({ moduleDir: dir, watch: false });
     await core.start();
-    setup(core);
-    await ask(core, 'frobnicate', {});
-    assert.equal(lastResult(core).ok, false);
-    assert.ok(String(lastResult(core).error).includes('未知 CLI 指令'));
-    assert.equal(core.array(CMD_ARRAY)[0].status, 'error');
+    const r = await ask(core, 'frobnicate', {});
+    assert.equal(r.ok, false);
+    assert.ok(String(r.error).includes('未知 CLI 指令'));
     await core.sendEvent('ping:ok', {}, 'tester');
-    assert.deepEqual(core.array('listener:got'), ['ping:ok']);
+    assert.deepEqual(arr(core as any, 'public:listener:got'), ['tester:ping:ok']);
     await core.stop();
   } finally { rmDir(dir); }
 });
 
-test('cli:commands 为空时 cli:request 不执行、不崩溃', async () => {
+test('exit 指令：先回执再关闭核心', async () => {
   const dir = mkTmpDir('cli');
   try {
     makeDir(dir);
     const core = new ConnectCore({ moduleDir: dir, watch: false });
     await core.start();
-    setup(core);
-    await core.sendEvent('cli:request', {}, 'cli');
-    assert.equal(core.array(RESULT_ARRAY).length, 0);
-    assert.ok(core.log.byType('error').some((l) => String(l.message).includes('没有待执行指令')));
-    await core.stop();
-  } finally { rmDir(dir); }
-});
-
-test('index 指令：查看比对索引状态', async () => {
-  const dir = mkTmpDir('cli');
-  try {
-    makeDir(dir);
-    const core = new ConnectCore({ moduleDir: dir, watch: false, indexBudgetBytes: 2 * 1024 * 1024 });
-    await core.start();
-    setup(core);
-    await ask(core, 'index', { action: 'view' });
-    const r = lastResult(core).result;
-    assert.equal(r.budgetBytes, 2 * 1024 * 1024);
-    assert.ok(r.start && r.listen, '应包含 start/listen 两份索引统计');
-    assert.equal(typeof r.listen.indexedPatterns, 'number');
-    assert.equal(typeof r.listen.overflowPatterns, 'number');
-    // 索引正常工作：echo 的 listen 为空，listener 监听 hello
-    await core.sendEvent('hello');
-    assert.deepEqual(core.array('listener:got'), ['hello']);
-    await core.stop();
-  } finally { rmDir(dir); }
-});
-
-test('index budget 指令：修改预算并重建索引，事件仍正确送达', async () => {
-  const dir = mkTmpDir('cli');
-  try {
-    makeDir(dir);
-    const core = new ConnectCore({ moduleDir: dir, watch: false });
-    await core.start();
-    setup(core);
-    await ask(core, 'index', { action: 'budget', mb: 1 });
-    const r = lastResult(core).result;
-    assert.equal(r.updated, true);
-    assert.equal(r.budgetBytes, 1024 * 1024);
-    // 重建后索引语义不变：通配 listen（ping:*）仍命中
-    await core.sendEvent('ping:after-budget');
-    assert.deepEqual(core.array('listener:got'), ['ping:after-budget']);
-    // 下限保护：0.01MB 被提升到 0.5MB
-    await ask(core, 'index', { action: 'budget', mb: 0.01 });
-    assert.equal(lastResult(core).result.budgetBytes, 512 * 1024);
-    // 非法输入报错，核心继续可用
-    await ask(core, 'index', { action: 'budget', mb: -5 });
-    assert.equal(lastResult(core).ok, false);
-    await core.sendEvent('hello');
-    assert.deepEqual(core.array('listener:got'), ['ping:after-budget', 'hello']);
-    await core.stop();
-  } finally { rmDir(dir); }
-});
-
-test('exit 指令：先写结果与完成门铃，再关闭核心', async () => {
-  const dir = mkTmpDir('cli');
-  try {
-    makeDir(dir);
-    const core = new ConnectCore({ moduleDir: dir, watch: false });
-    await core.start();
-    setup(core);
-    await ask(core, 'exit', {});
-    assert.equal(core.started, false); // 核心已停止
-    await core.stop();
+    await core.sendTo('core', { cmd: 'exit', args: {} }, 'tester');
+    await waitFor(() => core.started === false);
+    assert.equal(core.started, false);
   } finally { rmDir(dir); }
 });

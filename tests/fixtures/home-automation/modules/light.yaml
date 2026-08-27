@@ -3,4 +3,4 @@ file: ./light.cjs
 startEvents:
   - "core:startup"
 listen:
-  - "home:motion"
+  - "*:home:motion"

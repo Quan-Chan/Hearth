@@ -1,0 +1,6 @@
+name: a-blocked
+file: ./a-blocked.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "request"

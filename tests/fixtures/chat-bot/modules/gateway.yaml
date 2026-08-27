@@ -3,5 +3,5 @@ file: ./gateway.cjs
 startEvents:
   - "core:startup"
 listen:
-  - "chat:receive"
-  - "chat:reply"
+  - "*:chat:receive"
+  - "*:chat:reply"

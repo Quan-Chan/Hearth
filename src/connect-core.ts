@@ -8,7 +8,7 @@
  *     所有依赖该事件的模块自动启动——到这步，"整机"其实已经起来了。
  *  3. 驻留：核心的模块监听轮询器是 unref 的（不阻止进程退出），所以这里用一个
  *     永不触发的定时器占住事件循环，让进程活到用户主动关闭。
- *  4. 收尾：SIGINT / SIGTERM 时优雅关闭——先广播 core:shutdown 让模块收尾，
+ *  4. 收尾：SIGINT / SIGTERM 时优雅关闭——逐个停止模块（各自 stop() 收尾）、落盘日志、退出。
  *     再逆序停止、落盘日志、退出。
  *
  * 用法：node dist/connect-core.js [connect-core.yaml]
@@ -36,10 +36,6 @@ async function main(): Promise<void> {
     if (coreCfg.moduleDir) options.moduleDir = path.resolve(baseDir, String(coreCfg.moduleDir));
     if (coreCfg.logFile) options.logFile = path.resolve(baseDir, String(coreCfg.logFile));
     if (coreCfg.watch !== undefined) options.watch = Boolean(coreCfg.watch);
-    if (coreCfg.indexBudgetBytes !== undefined) {
-      const bytes = Number(coreCfg.indexBudgetBytes);
-      if (Number.isFinite(bytes) && bytes > 0) options.indexBudgetBytes = bytes;
-    }
     if (coreCfg.logToConsole) options.logToConsole = true;
     // eslint-disable-next-line no-console
     console.log(`[connect-core] 读取配置文件: ${configPath}`);

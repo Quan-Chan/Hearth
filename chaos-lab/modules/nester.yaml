@@ -1,0 +1,4 @@
+name: nester
+file: ./nester.cjs
+startEvents:
+  - "core:startup"

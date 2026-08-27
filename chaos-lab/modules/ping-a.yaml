@@ -1,0 +1,6 @@
+name: ping-a
+file: ./ping-a.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "loop:a"

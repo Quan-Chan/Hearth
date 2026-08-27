@@ -3,4 +3,4 @@ file: ./notifier.cjs
 startEvents:
   - "core:startup"
 listen:
-  - "task:done"
+  - "*:task:done"

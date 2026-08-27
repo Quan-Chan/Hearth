@@ -21,8 +21,12 @@ import { parse as parseYaml } from 'yaml';
 import type { ModuleConfig } from '../types';
 
 export interface WatcherCallbacks {
-  onLoad(config: ModuleConfig, yamlPath: string): void | Promise<void>;
-  onUpdate(config: ModuleConfig, yamlPath: string): void | Promise<void>;
+  /** 返回 false 表示拒绝注册（如模块名已被占用）：该文件不被记账，下轮扫描会重新检查并再次请求。
+   *  返回 void/true 表示接受。 */
+  onLoad(config: ModuleConfig, yamlPath: string): boolean | void | Promise<boolean | void>;
+  /** 返回 false 表示拒绝应用本次更新（如模块名已被其他文件占用）：known 保持原记录不变，
+   *  该文件不被记账，下轮扫描会重新检查并再次请求。返回 void/true 表示接受。 */
+  onUpdate(config: ModuleConfig, yamlPath: string): boolean | void | Promise<boolean | void>;
   onRemove(name: string): void | Promise<void>;
   onError?(name: string, message: string): void;
 }
@@ -88,7 +92,10 @@ export class ConfigWatcher {
     this.scanning = true;
     try {
       const files = collectYamlFiles(this.dir);
-      const seen = new Set<string>();
+      // fileSet：本轮磁盘上实际存在的 YAML 路径（删除检查的依据）
+      const fileSet = new Set(files);
+      // 阶段1：收集本轮的解析结果（stat/hash/parse），不触发回调、不记账。
+      const candidates: { yamlPath: string; stat: fs.Stats; hash: string; cfg: ModuleConfig }[] = [];
       for (const yamlPath of files) {
         // 1) 稳态快路径：仅 stat，指纹与上次一致则跳过（文件没变，不读内容）
         let stat: fs.Stats;
@@ -99,7 +106,6 @@ export class ConfigWatcher {
         }
         const prevStat = this.stats.get(yamlPath);
         if (prevStat && sameFingerprint(prevStat, stat)) {
-          seen.add(prevStat.name);
           continue;
         }
         // 2) 指纹变了：读内容 + 哈希二次确认（touch 只改 mtime 时哈希相同 -> 跳过）
@@ -116,11 +122,10 @@ export class ConfigWatcher {
           if (prev && prev.hash === hash) {
             // 内容没变：只更新指纹（不触发 onUpdate）
             this.stats.set(yamlPath, { name: cfgName, mtimeMs: stat.mtimeMs, size: stat.size, ctimeMs: stat.ctimeMs });
-            seen.add(cfgName);
             continue;
           }
         }
-        // 3) 哈希真变（或新文件）：解析 YAML 确定模块名并触发回调
+        // 3) 哈希真变（或新文件）：解析 YAML 确定模块名（先不收账）
         let cfg: ModuleConfig;
         try {
           cfg = parseModuleConfig(text, path.dirname(yamlPath));
@@ -131,23 +136,37 @@ export class ConfigWatcher {
           );
           continue; // 不更新指纹 -> 下轮重试（自愈）
         }
-        this.stats.set(yamlPath, { name: cfg.name, mtimeMs: stat.mtimeMs, size: stat.size, ctimeMs: stat.ctimeMs });
-        seen.add(cfg.name);
-        const prev = this.known.get(cfg.name);
-        if (!prev) {
-          this.known.set(cfg.name, { yamlPath, hash });
-          await this.callbacks.onLoad(cfg, yamlPath);
-        } else if (prev.hash !== hash) {
-          this.known.set(cfg.name, { yamlPath, hash });
-          await this.callbacks.onUpdate(cfg, yamlPath);
-        }
+        candidates.push({ yamlPath, stat, hash, cfg });
       }
+      // 阶段2：删除检查 —— known 记录的 yamlPath 已不在磁盘上，即模块消失。
+      //   与回调成败无关：文件是否还存在是删除的唯一依据（坏 YAML/被拒文件的
+      //   存在不影响其他文件的删除判定）。
       for (const [name, info] of [...this.known]) {
-        if (!seen.has(name)) {
+        if (!fileSet.has(info.yamlPath)) {
           this.known.delete(name);
           this.stats.delete(info.yamlPath);
           await this.callbacks.onRemove(name);
         }
+      }
+      // 阶段3：对解析成功的文件触发回调。消费方（核心）可拒绝注册/更新（返回 false）：
+      //   此时本文件不记账（known/stats 都不动），下轮扫描会重新检查并再次请求，
+      //   与坏 YAML 的"每轮重试"同语义——拒绝持续可见直到问题被修复。
+      for (const c of candidates) {
+        const prev = this.known.get(c.cfg.name);
+        if (!prev) {
+          const accepted = await this.callbacks.onLoad(c.cfg, c.yamlPath);
+          if (accepted === false) continue; // 拒绝注册：不记账，下轮重新请求
+          this.known.set(c.cfg.name, { yamlPath: c.yamlPath, hash: c.hash });
+        } else if (prev.hash !== c.hash) {
+          const accepted = await this.callbacks.onUpdate(c.cfg, c.yamlPath);
+          if (accepted === false) continue; // 拒绝更新：known 保持原记录，本文件不记账
+          this.known.set(c.cfg.name, { yamlPath: c.yamlPath, hash: c.hash });
+        } else {
+          // 内容没变但走到完整分支（指纹曾失效）：只更新指纹即可
+          this.stats.set(c.yamlPath, { name: c.cfg.name, mtimeMs: c.stat.mtimeMs, size: c.stat.size, ctimeMs: c.stat.ctimeMs });
+          continue;
+        }
+        this.stats.set(c.yamlPath, { name: c.cfg.name, mtimeMs: c.stat.mtimeMs, size: c.stat.size, ctimeMs: c.stat.ctimeMs });
       }
     } finally {
       this.scanning = false;
@@ -211,7 +230,7 @@ export function parseModuleConfig(text: string, baseDir: string): ModuleConfig {
   if (typeof file !== 'string' || file.length === 0) {
     throw new Error(`模块 ${name} 缺少 file（模块程序路径）`);
   }
-  return {
+  const cfg: ModuleConfig = {
     name,
     file: path.resolve(baseDir, file),
     startEvents: normalizeStringArray(obj.startEvents),
@@ -222,6 +241,14 @@ export function parseModuleConfig(text: string, baseDir: string): ModuleConfig {
         ? (obj.config as Record<string, unknown>)
         : {},
   };
+  const rawTimeout = obj.startTimeoutMs;
+  if (rawTimeout !== undefined && rawTimeout !== null) {
+    if (typeof rawTimeout !== 'number' || !Number.isFinite(rawTimeout) || rawTimeout <= 0) {
+      throw new Error(`模块 ${name} 的 startTimeoutMs 必须是正数（毫秒）`);
+    }
+    cfg.startTimeoutMs = rawTimeout;
+  }
+  return cfg;
 }
 
 function normalizeStringArray(v: unknown): string[] | undefined {

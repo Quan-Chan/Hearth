@@ -2,7 +2,7 @@
  * 模块程序加载器：把 YAML 里 file 指向的"程序"归一化成核心认识的 ModuleDefinition。
  * 支持 CJS 对象、ESM 默认导出、工厂函数（运行时求值）三种写法，统一收敛为
  * { start, stop, onEvent } 钩子集合。
- * 加载点放在每次 startModule（启动即重载）：YAML 更新触发的"重启"因此拿到最新代码（热更新）。
+ * 加载点放在每次启动（startModule）：模块每次启动都重新加载代码文件。
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -20,7 +20,7 @@ export async function loadModuleProgram(filePath: string): Promise<ModuleDefinit
     const dynamicImport = new Function('s', 'return import(s)') as (s: string) => Promise<unknown>;
     loaded = await dynamicImport(pathToFileURL(abs).href);
   } else {
-    // 先清缓存再 require：不删缓存，二次加载会拿到首次启动的旧实现，热更新就失效了。
+    // 先清缓存再 require：不删缓存，二次加载会拿到首次启动的旧实现，重启就失效了。
     delete require.cache[abs];
     loaded = require(abs);
   }

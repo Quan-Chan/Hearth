@@ -3,4 +3,4 @@ file: ./logger.cjs
 startEvents:
   - "core:startup"
 listen:
-  - "home:*"
+  - "*:home:*"

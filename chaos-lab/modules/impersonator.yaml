@@ -1,0 +1,6 @@
+name: impersonator
+file: ./impersonator.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "tick"

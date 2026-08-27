@@ -3,4 +3,4 @@ file: ./stats.cjs
 startEvents:
   - "core:startup"
 listen:
-  - "chat:*"
+  - "*:chat:*"

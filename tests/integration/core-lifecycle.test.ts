@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ConnectCore } from '../../src/core/ConnectCore';
-import { mkTmpDir, rmDir, yamlFor } from '../helpers';
+import { mkTmpDir, rmDir, arr, yamlFor } from '../helpers';
 
 /** 生成一组生命周期测试模块夹具。 */
 function makeFixtures(dir: string): void {
@@ -13,10 +13,10 @@ function makeFixtures(dir: string): void {
     `module.exports = {
   name: 'boot',
   start(ctx) {
-    ctx.exposeArray('boot:marks', ['started']);
+    ctx.exposeArray('marks', ['started']);
   },
   onEvent(ctx, event) {
-    ctx.array('boot:marks').push(event.name);
+    ctx.array('marks').push(event.name);
   },
 };
 `,
@@ -27,10 +27,10 @@ function makeFixtures(dir: string): void {
     `module.exports = {
   name: 'lazy',
   onEvent(ctx, event) {
-    ctx.array('lazy:marks').push(event.name);
+    ctx.array('marks').push(event.name);
   },
   start(ctx) {
-    ctx.exposeArray('lazy:marks', ['lazy-started']);
+    ctx.exposeArray('marks', ['lazy-started']);
   },
 };
 `,
@@ -40,8 +40,8 @@ function makeFixtures(dir: string): void {
     path.join(dir, 'wild.cjs'),
     `module.exports = {
   name: 'wild',
-  start(ctx) { ctx.exposeArray('wild:marks', []); },
-  onEvent(ctx, event) { ctx.array('wild:marks').push(event.name); },
+  start(ctx) { ctx.exposeArray('marks', []); },
+  onEvent(ctx, event) { ctx.array('marks').push(event.name); },
 };
 `,
   );
@@ -59,16 +59,16 @@ function makeFixtures(dir: string): void {
     path.join(dir, 'badhandler.cjs'),
     `module.exports = {
   name: 'badhandler',
-  start(ctx) { ctx.exposeArray('bh:marks', []); },
+  start(ctx) { ctx.exposeArray('marks', []); },
   onEvent() { throw new Error('badhandler 处理出错'); },
 };
 `,
   );
-  fs.writeFileSync(path.join(dir, 'boot.yaml'), yamlFor('boot', { startEvents: ['core:startup'], listen: ['chat:message', 'chat:reply'] }));
-  fs.writeFileSync(path.join(dir, 'lazy.yaml'), yamlFor('lazy', { startEvents: ['lazy:go'], listen: ['lazy:go'] }));
-  fs.writeFileSync(path.join(dir, 'wild.yaml'), yamlFor('wild', { startEvents: ['core:startup'], listen: ['wild:*'] }));
+  fs.writeFileSync(path.join(dir, 'boot.yaml'), yamlFor('boot', { startEvents: ['core:startup'], listen: ['*:chat:message', '*:chat:reply'] }));
+  fs.writeFileSync(path.join(dir, 'lazy.yaml'), yamlFor('lazy', { startEvents: ['*:lazy:go'], listen: ['*:lazy:go'] }));
+  fs.writeFileSync(path.join(dir, 'wild.yaml'), yamlFor('wild', { startEvents: ['core:startup'], listen: ['*:wild:*'] }));
   fs.writeFileSync(path.join(dir, 'boom.yaml'), yamlFor('boom', { startEvents: ['core:startup'] }));
-  fs.writeFileSync(path.join(dir, 'badhandler.yaml'), yamlFor('badhandler', { startEvents: ['core:startup'], listen: ['chat:message'] }));
+  fs.writeFileSync(path.join(dir, 'badhandler.yaml'), yamlFor('badhandler', { startEvents: ['core:startup'], listen: ['*:chat:message'] }));
 }
 
 function makeCore(dir: string): ConnectCore {
@@ -87,11 +87,12 @@ test('启动核心 == 启动整个软件：core:startup 自动启动匹配模块
     assert.equal(core.getModule('boom')!.status, 'failed');
     assert.equal(core.getModule('lazy')!.status, 'stopped'); // 启动事件未出现
     // 启动时暴露的数组可用
-    assert.deepEqual(core.array('boot:marks'), ['started']);
+    assert.deepEqual(arr(core as any, 'public:boot:marks'), ['started']);
     // 事件流水：核心启动事件原样记录（无模块监听 -> 记录为 event-drop，符合新语义）
     const drops = core.log.byType('event-drop');
     assert.equal(drops[0].event, 'core:startup');
     assert.equal(drops[0].source, 'core');
+    // 附注：因为 startup 无监听者，任何以 core:startup 为启动条件的模块仍会先行启动（启动比对在丢弃判定之前）
     const starts = core.log.byType('module-start');
     assert.ok(starts.every((s) => s.reason === 'core:startup'));
     await core.stop();
@@ -107,17 +108,17 @@ test('事件路由：精确匹配 + 通配符匹配，非监听者不收', async
     const core = makeCore(dir);
     await core.start();
     await core.sendEvent('chat:message', { text: 'hi' }, 'tester');
-    assert.deepEqual(core.array('boot:marks'), ['started', 'chat:message']);
+    assert.deepEqual(arr(core as any, 'public:boot:marks'), ['started', 'tester:chat:message']);
     // badhandler 也监听 chat:message：它抛错，但日志记录且不影响其他模块
     assert.equal(core.log.byType('error').filter((e) => String(e.message).includes('处理事件')).length, 1);
     // wild 通配符收不到 chat:message
-    assert.deepEqual(core.array('wild:marks'), []);
+    assert.deepEqual(arr(core as any, 'public:wild:marks'), []);
     await core.sendEvent('wild:ping');
-    assert.deepEqual(core.array('wild:marks'), ['wild:ping']);
+    assert.deepEqual(arr(core as any, 'public:wild:marks'), ['external:wild:ping']);
     // lazy 未启动，收不到事件
     await core.sendEvent('lazy:go', { v: 1 }, 'tester');
     assert.equal(core.getModule('lazy')!.status, 'running'); // 事件触发启动
-    assert.deepEqual(core.array('lazy:marks'), ['lazy-started', 'lazy:go']); // 启动后也收到了事件
+    assert.deepEqual(arr(core as any, 'public:lazy:marks'), ['lazy-started', 'tester:lazy:go']); // 启动后也收到了事件
     await core.stop();
   } finally {
     rmDir(dir);
@@ -159,38 +160,33 @@ test('模块失败隔离：启动失败/事件处理失败不影响核心与其�
     const core = makeCore(dir);
     await core.start();
     assert.equal(core.getModule('boom')!.status, 'failed');
-    assert.ok(core.getModule('boom')!.error!.includes('启动失败'));
+    // 失败原因在日志（error 类型，含"启动失败"），状态不重复保存
     assert.equal(core.log.byType('error').filter((e) => String(e.message).includes('启动失败')).length, 1);
     // 核心仍然工作
     await core.sendEvent('wild:ok');
-    assert.deepEqual(core.array('wild:marks'), ['wild:ok']);
+    assert.deepEqual(arr(core as any, 'public:wild:marks'), ['external:wild:ok']);
     // badhandler 抛错被记录，boot 仍收到事件
     await core.sendEvent('chat:message', { text: 'x' });
     assert.equal(core.log.byType('error').filter((e) => String(e.message).includes('处理事件')).length, 1);
-    assert.deepEqual(core.array('boot:marks'), ['started', 'chat:message']);
+    assert.deepEqual(arr(core as any, 'public:boot:marks'), ['started', 'external:chat:message']);
     await core.stop();
   } finally {
     rmDir(dir);
   }
 });
 
-test('关闭：core:shutdown 先广播，模块逆序停止，之后不能再发事件', async () => {
+test('关闭：全部模块返回"已关闭"后核心关闭，之后不能再发事件', async () => {
   const dir = mkTmpDir('life');
   try {
     makeFixtures(dir);
     const core = makeCore(dir);
     await core.start();
-    // 启动顺序：badhandler, boot, boom, lazy, wild（文件名字母序）
-    const startOrder = core.log.byType('module-start').map((s) => s.module);
+    const started = core.listModules().filter((m) => m.status === 'running').map((m) => m.name);
     await core.stop();
-    // core:shutdown 事件在 module-stop 之前（无模块监听 -> event-drop）
-    const shutdownIdx = core.log.byType('event-drop').findIndex((e) => e.event === 'core:shutdown');
-    const stopEntries = core.log.byType('module-stop');
-    assert.ok(shutdownIdx >= 0);
-    assert.ok(stopEntries.length >= 2);
-    const stopOrder = stopEntries.map((s) => s.module);
-    // 逆序停止
-    assert.deepEqual(stopOrder, [...startOrder].reverse());
+    // ① 每个运行过的模块都走了停止（stop() 返回 = 已关闭；停止是并行触发，不承诺顺序）
+    const stopModules = new Set(core.log.byType('module-stop').map((s) => s.module as string));
+    for (const name of started) assert.ok(stopModules.has(name), name + ' 已完成停止');
+    // badhandler 的 stop 不存在但仍应视为已关闭（stop() 未定义 = 立即返回）——boot 覆盖
     assert.equal(core.log.byType('core-stop').length, 1);
     assert.equal(core.started, false);
     // 停止后不能发送事件
@@ -206,15 +202,15 @@ test('事件丢弃：无人监听的事件记录 event-drop', async () => {
     makeFixtures(dir);
     const core = makeCore(dir);
     await core.start();
-    // nobody:listens 没有任何模块监听（也没有模块以此为启动事件）
+    // nobody:listens 没有任何模块监听（也没有模块以此为启动事件）；事件名为两段式
     await core.sendEvent('nobody:listens', { x: 1 }, 'tester');
-    const drops = core.log.byType('event-drop').filter((e) => e.event === 'nobody:listens');
+    const drops = core.log.byType('event-drop').filter((e) => e.event === 'tester:nobody:listens');
     assert.equal(drops.length, 1);
     assert.equal(drops[0].source, 'tester');
-    assert.equal(drops[0].message, 'nobody:listens');
-    // 有监听的正常事件不产生 event-drop（core:startup 是无监听的，属预期）
+    assert.equal(drops[0].message, 'tester:nobody:listens');
+    // 有监听的正常事件不产生 event-drop
     await core.sendEvent('wild:ok');
-    assert.equal(core.log.byType('event-drop').filter((e) => e.event === 'nobody:listens').length, 1);
+    assert.equal(core.log.byType('event-drop').filter((e) => e.event === 'tester:nobody:listens').length, 1);
     await core.stop();
   } finally {
     rmDir(dir);

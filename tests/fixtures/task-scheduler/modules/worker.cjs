@@ -2,9 +2,9 @@
 module.exports = {
   name: 'worker',
   onEvent(ctx, event) {
-    if (event.name !== 'task:due') return;
+    if (!event.name.endsWith(':task:due')) return;
     const t = event.data;
-    ctx.array('tasks:done').push({ id: t.id, name: t.name, status: 'done', completedAt: Date.now() });
+    ctx.array('public:scheduler:done').push({ id: t.id, name: t.name, status: 'done', completedAt: Date.now() });
     ctx.sendEvent('task:done', { id: t.id, name: t.name });
   },
 };

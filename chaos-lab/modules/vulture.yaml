@@ -1,0 +1,6 @@
+name: vulture
+file: ./vulture.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "tick"

@@ -2,14 +2,14 @@
 module.exports = {
   name: 'light',
   start(ctx) {
-    ctx.exposeArray('home:lights', [{ room: 'living', on: false }]);
+    ctx.exposeArray('lights', [{ room: 'living', on: false }]);
   },
   onEvent(ctx, event) {
-    if (event.name !== 'home:motion') return;
+    if (!event.name.endsWith(':home:motion')) return;
     const m = event.data;
-    const lights = ctx.array('home:lights');
+    const lights = ctx.array('lights');
     const idx = lights.findIndex((l) => l.room === m.room);
-    if (idx >= 0) ctx.array('home:lights')[idx] = { room: m.room, on: !!m.motion };
-    else ctx.array('home:lights').push({ room: m.room, on: !!m.motion });
+    if (idx >= 0) ctx.array('lights')[idx] = { room: m.room, on: !!m.motion };
+    else ctx.array('lights').push({ room: m.room, on: !!m.motion });
   },
 };

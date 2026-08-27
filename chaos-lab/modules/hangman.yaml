@@ -1,0 +1,5 @@
+name: hangman
+file: ./hangman.cjs
+startEvents:
+  - "hangman:go"
+startTimeoutMs: 3000

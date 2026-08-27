@@ -3,4 +3,4 @@ file: ./router.cjs
 startEvents:
   - "core:startup"
 listen:
-  - "chat:receive"
+  - "*:chat:receive"

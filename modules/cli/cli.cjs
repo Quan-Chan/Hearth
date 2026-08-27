@@ -6,7 +6,7 @@
  * 信息直达（不再用公共数组/门铃）：
  *  - 发送：ctx.sendTo('core', { cmd, args })        —— 直接发给核心执行
  *  - 接收：onMessage(ctx, message)                   —— 核心直接把结果回传（message.data = { cmd, ok, result, error }）
- * 任何模块用同样的接口调核心都不互相污染：结果只投递给发起方自己（head.source = 谁发的就回给谁）。
+ * 任何模块用同样的接口调核心都不互相污染：结果只投递给发起方自己（source = 谁发的就回给谁）。
  */
 const readline = require('readline');
 const fs = require('fs');
@@ -32,7 +32,12 @@ function fmt(e) {
   const extra = [];
   if (e.event !== undefined && e.type !== 'event' && e.type !== 'event-drop') extra.push('event=' + e.event);
   if (Array.isArray(e.recipients) && e.recipients.length) extra.push('转发=' + e.recipients.join(','));
-  if (e.data !== undefined) extra.push('data=' + JSON.stringify(e.data));
+  if (e.data !== undefined) {
+    // 展示层缩短：文件里是完整内容，终端上只为可读性截断（与核心 formatLogEntry 同规则）
+    let s = JSON.stringify(e.data);
+    if (s.length > 2048) s = s.slice(0, 2048) + '…[截断显示，原始 ' + s.length + ' 字符]';
+    extra.push('data=' + s);
+  }
   if (e.reason !== undefined) extra.push('reason=' + e.reason);
   if (e.error !== undefined) extra.push('error=' + String(e.error));
   if (Array.isArray(e.removedArrays) && e.removedArrays.length) extra.push('清理数组=' + e.removedArrays.join(','));
@@ -44,14 +49,30 @@ function logFileOf(ctx) {
   return path.resolve(__dirname, cfg.logFile || '../../logs/event-stream.log');
 }
 
-/** 小功能：自己读日志文件按关键字 grep / 尾部截断。核心不参与。 */
+/** 列出基础路径下的全部轮转日志文件（<基础名>.<日期>.<序号>.log），按时间顺序排列。 */
+function logFilesOf(baseFile) {
+  const dir = path.dirname(baseFile);
+  const ext = path.extname(baseFile);
+  const base = path.basename(baseFile, ext);
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp('^' + esc(base) + '\\.(\\d{4}-\\d{2}-\\d{2})\\.(\\d{3})' + esc(ext) + '$');
+  let names = [];
+  try { names = fs.readdirSync(dir); } catch { return []; }
+  return names.filter((n) => re.test(n)).sort().map((n) => path.join(dir, n));
+}
+
+/** 小功能：自己读日志文件按关键字 grep / 尾部截断。核心不参与。轮转文件按序合并。 */
 function showLog(ctx, pattern, count) {
   setTimeout(() => {
-    const file = logFileOf(ctx);
-    if (!fs.existsSync(file)) {
-      console.log('日志文件不存在: ' + file);
+    const baseFile = logFileOf(ctx);
+    const files = logFilesOf(baseFile);
+    if (!files.length) {
+      console.log('日志文件不存在: ' + baseFile);
     } else {
-      const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean);
+      const lines = [];
+      for (const f of files) {
+        for (const l of fs.readFileSync(f, 'utf8').split(/\r?\n/)) if (l) lines.push(l);
+      }
       let entries = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
       if (pattern) {
         entries = entries.filter((e) => String(e.type).includes(pattern) || String(e.source).includes(pattern) || String(e.message).includes(pattern));
@@ -72,7 +93,6 @@ function helpText() {
     '  stop <模块>                  关闭模块',
     '  send <目标|*> <名称> [JSON]  定向发送事件（目标=模块名，逗号分隔；* 广播）',
     '  state                        查看模块与公共数组',
-    '  index [budget <MB>]          查看比对索引状态 / 修改索引内存预算',
     '  log [过滤词] [条数]          查看日志时间线（读文件 grep）',
     '  help / exit',
   ].join('\n');
@@ -120,18 +140,6 @@ function run(ctx, line) {
       ask(ctx, 'state', {});
       console.log('→ 已提交 state');
       break;
-    case 'index': {
-      if (parts[1] === 'budget') {
-        const mb = parts[2];
-        if (!mb || !/^\d+(\.\d+)?$/.test(mb)) return console.log('用法: index budget <MB>');
-        ask(ctx, 'index', { action: 'budget', mb: parseFloat(mb) });
-        console.log('→ 已提交 index budget ' + mb + 'MB');
-      } else {
-        ask(ctx, 'index', { action: 'view' });
-        console.log('→ 已提交 index（查询比对索引状态）');
-      }
-      break;
-    }
     case 'log':
       showLog(ctx, parts[1] || null, parts[2] ? parseInt(parts[2], 10) : 0);
       break;
@@ -193,19 +201,6 @@ module.exports = {
           console.log('  数组 ' + name + ' = ' + items);
         }
       }
-    } else if (r.cmd === 'index') {
-      const s = r.result || {};
-      console.log('--- 比对索引 ---');
-      console.log('  预算 ' + Math.round((s.budgetBytes || 0) / 1024) + ' KB');
-      for (const [kind, st] of Object.entries({ start: s.start, listen: s.listen })) {
-        if (!st) continue;
-        console.log(
-          '  ' + kind + ': 已用 ' + Math.round(st.usedBytes / 1024) + ' KB, 索引 ' + st.indexedPatterns +
-          ' 条件 (精确 ' + st.exactPatterns + ' / 桶 ' + st.bucketPatterns + ' / 全局 ' + st.globalPatterns +
-          ', ' + st.buckets + ' 桶), 溢出 ' + st.overflowPatterns,
-        );
-      }
-      if (s.updated) console.log('  (预算已更新并重建索引)');
     } else if (r.cmd === 'exit') {
       // 核心正在关闭；stop() 里负责退出进程
     } else {

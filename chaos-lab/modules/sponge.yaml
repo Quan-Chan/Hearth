@@ -1,0 +1,6 @@
+name: sponge
+file: ./sponge.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "*"

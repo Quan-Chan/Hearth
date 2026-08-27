@@ -24,6 +24,8 @@ export const LOG_TYPES = {
   MODULE_START: 'module-start',
   MODULE_STOP: 'module-stop',
   MODULE_SKIP: 'module-skip',
+  MODULE_START_TIMEOUT: 'module-start-timeout', // 模块启动超过期限未完成，放弃等待
+  MODULE_RESTART: 'module-restart', // 模块请求重启：核心验证新代码后停旧启新
   // 配置热加载（监听模块文件夹）
   CONFIG_LOAD: 'config-load',
   CONFIG_UPDATE: 'config-update',
@@ -49,6 +51,8 @@ const TYPE_TO_CATEGORY: Record<string, LogCategory> = {
   'module-start': 'module',
   'module-stop': 'module',
   'module-skip': 'module',
+  'module-start-timeout': 'module',
+  'module-restart': 'module',
   'config-load': 'config',
   'config-update': 'config',
   'config-remove': 'config',
@@ -56,6 +60,15 @@ const TYPE_TO_CATEGORY: Record<string, LogCategory> = {
   'cli-command': 'module',
   error: 'error',
 };
+
+/** 展示层单字段的最大显示字符数；存储层永远完整（见 EventStreamLog），截断只发生在渲染时。 */
+export const DISPLAY_TRUNCATE_CHARS = 2048;
+
+/** 展示层文本缩短：超长部分以省略号 + 原始长度标注替代，信息本体以落盘文件为准。 */
+export function truncateDisplay(text: string, max: number = DISPLAY_TRUNCATE_CHARS): string {
+  if (text.length <= max) return text;
+  return text.slice(0, max) + `…[截断显示，原始 ${text.length} 字符]`;
+}
 
 /** 由 type 得到类别。 */
 export function categoryOf(type: string): LogCategory {
@@ -75,7 +88,8 @@ export function formatLogEntry(entry: LogEntry): string {
     extra.push('转发=' + entry.recipients.join(','));
   }
   if (entry.data !== undefined) {
-    extra.push('data=' + JSON.stringify(entry.data));
+    // 展示层缩短：文件里存的是完整内容，这里只为人类可读性截断
+    extra.push('data=' + truncateDisplay(JSON.stringify(entry.data)));
   }
   if (entry.reason !== undefined) {
     extra.push('reason=' + entry.reason);

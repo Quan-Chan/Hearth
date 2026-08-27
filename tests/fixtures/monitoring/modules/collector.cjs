@@ -2,18 +2,18 @@
 module.exports = {
   name: 'collector',
   start(ctx) {
-    ctx.exposeArray('metrics:latest', []);
+    ctx.exposeArray('latest', []);
   },
   onEvent(ctx, event) {
-    if (event.name !== 'app:metric') return;
+    if (!event.name.endsWith(':app:metric')) return;
     const m = event.data;
-    const latest = ctx.array('metrics:latest');
+    const latest = ctx.array('latest');
     const idx = latest.findIndex((x) => x.name === m.name);
     if (idx >= 0) {
       // 同名指标：更新（set 覆盖）
-      ctx.array('metrics:latest')[idx] = { name: m.name, value: m.value, at: Date.now() };
+      ctx.array('latest')[idx] = { name: m.name, value: m.value, at: Date.now() };
     } else {
-      ctx.array('metrics:latest').push({ name: m.name, value: m.value, at: Date.now() });
+      ctx.array('latest').push({ name: m.name, value: m.value, at: Date.now() });
     }
   },
 };

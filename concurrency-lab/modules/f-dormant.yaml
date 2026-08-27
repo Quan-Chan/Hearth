@@ -1,0 +1,4 @@
+name: f-dormant
+file: ./f-dormant.cjs
+startEvents:
+  - "never:arrives"

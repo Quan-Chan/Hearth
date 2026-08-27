@@ -2,18 +2,18 @@
 module.exports = {
   name: 'thermostat',
   start(ctx) {
-    ctx.exposeArray('home:devices', [{ room: 'living', cooling: false }]);
+    ctx.exposeArray('devices', [{ room: 'living', cooling: false }]);
   },
   onEvent(ctx, event) {
-    if (event.name === 'home:temperature') {
+    if (event.name.endsWith(':home:temperature')) {
       const t = event.data;
       if (t.temp > 26) ctx.sendEvent('home:cooling', { room: t.room });
-    } else if (event.name === 'home:cooling') {
+    } else if (event.name.endsWith(':home:cooling')) {
       const c = event.data;
-      const devices = ctx.array('home:devices');
+      const devices = ctx.array('devices');
       const idx = devices.findIndex((d) => d.room === c.room);
-      if (idx >= 0) ctx.array('home:devices')[idx] = { room: c.room, cooling: true };
-      else ctx.array('home:devices').push({ room: c.room, cooling: true });
+      if (idx >= 0) ctx.array('devices')[idx] = { room: c.room, cooling: true };
+      else ctx.array('devices').push({ room: c.room, cooling: true });
     }
   },
 };

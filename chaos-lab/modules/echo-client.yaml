@@ -1,0 +1,4 @@
+name: echo-client
+file: ./echo-client.cjs
+startEvents:
+  - "core:startup"

@@ -6,11 +6,11 @@
  *   2. 关闭模块        -> stopModule（关闭时其公开数组自动取消映射、自然消失）
  *   3. 发送事件消息    -> sendEvent（比对事件：启动匹配模块 + 向监听模块转发）
  * 框架其余功能：
- *   - 自产事件：核心启动/关闭时产生 "core:startup" / "core:shutdown"
+ *   - 自产事件：核心启动时产生 "core:startup"
  *   - 监听模块文件夹：ConfigWatcher 热加载 YAML（新增/修改/删除）
  *   - 日志：只记录核心自己干的事情（三字段：type/source/message，见 logFormat.ts）
  *   - 公共数组：映射语义，公开者把数组对象映射到名字，所有人共享同一对象
- *   - CLI 门铃协议：委托给 CliProtocol（独立文件）；这里只负责拦截 cli:request 并转交
+ *   - CLI 指令协议：委托给 CliProtocol（独立文件）；目标为 core 的定向信息被转交
  *
  * 启动核心 == 启动整个软件：core.start() 会扫描模块配置并发出 core:startup，
  * 所有依赖该事件的模块自动启动，无需单独启动任何模块。
@@ -21,11 +21,11 @@
  *   （模块间的 DAG 由此涌现）；② 收集 listen 命中的监听者（无人认领则记 event-drop）；
  *   ③ 逐个派发事件消息，单点失败只记 error、不影响其他模块。
  *   配置热加载不重启核心：监听器感知到文件增/改/删，就地 加载/重启/移除 模块并重建索引。
- *   stop() -> 先发 core:shutdown 让模块收尾 -> 逆序停止、注销公共数组 -> 关闭日志。
+ *   stop() -> 逐个调用模块 stop() 等返回"已关闭"（超时强制关闭）-> 关闭日志。
  *
  * 文件组织（一个文件 = 一个功能部分，避免碎片化）：
  *   - 本文件：核心类本体 —— 生命周期 / 核心方法 / 事件派发 / 配置热加载 / 公共数组 API / 查询；
- *   - CliProtocol.ts：CLI 门铃协议（事件=门铃、数组=内容 的约定式联动），独立成文件；
+ *   - CliProtocol.ts：CLI 指令协议（定向指令 + 结果回传），独立成文件；
  *   - 其余每个 core/*.ts 一个功能部分（见 README §6 目录结构）。
  */
 import * as path from 'path';
@@ -35,8 +35,7 @@ import { ConfigWatcher } from './ConfigWatcher';
 import { ModuleContext } from './ModuleContext';
 import { anyEventMatches } from './EventMatcher';
 import { MatchIndex } from './MatchIndex';
-import type { MatchIndexStats } from './MatchIndex';
-import { CliProtocol, CLI_REQUEST_EVENT } from './CliProtocol';
+import { CliProtocol } from './CliProtocol';
 import { LOG_TYPES } from './logFormat';
 import type { LogType } from './logFormat';
 import { loadModuleProgram } from '../module/loadModule';
@@ -49,10 +48,14 @@ import type {
   ModuleRuntimeInfo,
 } from '../types';
 
-/** 事件比对索引的默认字节预算（空间换时间上限，≈8000 个条件入索引）。 */
-const DEFAULT_INDEX_BUDGET_BYTES = 8 * 1024 * 1024;
-/** 事件比对索引预算的下限（防误设把索引完全关掉）。 */
-const MIN_INDEX_BUDGET_BYTES = 512 * 1024;
+/** 日志内存副本的默认条数上限（超出丢最旧的；落盘文件不受影响）。 */
+const DEFAULT_MAX_LOG_MEMORY_ENTRIES = 20000;
+/** 停止等待上限的默认值（毫秒）：停机时等待全部模块返回"已关闭"的总时限，超时强制关闭。 */
+const DEFAULT_STOP_TIMEOUT_MS = 20000;
+/** 判定是否为"人为/配置驱动"的启动：可解除启动超时后的自动重试锁定。 */
+function isManualishStart(reason?: string): boolean {
+  return reason === 'manual' || reason === 'cli' || reason === 'config-load' || reason === 'config-update' || reason === 'restart';
+}
 
 /** 模块槽位：一个 YAML 配置对应的全部运行时状态。 */
 interface ModuleSlot {
@@ -61,11 +64,16 @@ interface ModuleSlot {
   yamlPath: string;
   def?: ModuleDefinition;
   ctx?: ModuleContext;
-  status: 'running' | 'stopped' | 'failed';
-  startedAt?: number;
-  error?: string;
+  status: 'running' | 'stopped' | 'failed' | 'starting';
   /** 加载序号：索引查找后按此恢复与全量遍历一致的顺序 */
   seq: number;
+  /** 启动代数：关闭/取消会使旧的启动尝试作废（陈旧结果不得写回状态） */
+  startSeq: number;
+  /** 进行中的启动过程：同一模块同时只允许一次启动尝试，防止事件风暴重复拉起 */
+  inflightStart?: Promise<void>;
+  /** 启动超时后置位：不再因事件自动重试（悬挂函数无法终止，重复尝试只会堆积），
+   *  需手动启动或配置更新解锁。 */
+  startTimedOut?: boolean;
 }
 
 /** 模块启动原因 -> 人类可读描述（用于 module-start 日志的 message）。 */
@@ -73,6 +81,7 @@ function describeStartReason(reason?: string): string {
   if (!reason || reason === 'manual') return '手动启动';
   if (reason === 'config-load') return '配置加载，启动事件已发生';
   if (reason === 'config-update') return '配置更新，重新启动';
+  if (reason === 'restart') return '模块请求重启';
   return `事件 ${reason} 匹配启动条件`;
 }
 
@@ -84,16 +93,19 @@ export class ConnectCore {
 
   private arrays = new ArrayRegistry();
   private modules = new Map<string, ModuleSlot>();
-  /** 已经出现过的事件名（用于"事件已发生则立即启动新模块"）。 */
-  private occurred = new Set<string>();
   /** 事件比对索引：startEvents 与 listen 各自一份（配置变更时重建，模块启停不碰索引）。 */
   private startIndex = new MatchIndex<ModuleSlot>();
   private listenIndex = new MatchIndex<ModuleSlot>();
   private slotSeq = 0;
   private watcher?: ConfigWatcher;
   private startedFlag = false;
-  /** CLI 门铃协议处理器（惰性创建：只有真的收到 cli:request 才实例化，普通核心零污染）。 */
+  /** CLI 指令协议处理器（惰性创建：只有真的收到定向指令才实例化，普通核心零污染）。 */
   private cliProtocolInst?: CliProtocol;
+  /** 停机中标记：置位后拒绝外部事件/启动/配置变更，保证关闭过程是事务。 */
+  private stoppingFlag = false;
+  /** 进程级兜底：开启 guardProcess 的核心集合与已安装的处理句柄。 */
+  private static guardedCores = new Set<ConnectCore>();
+  private static processGuardInstalled = false;
 
   constructor(options: ConnectCoreOptions = {}) {
     this.options = {
@@ -101,12 +113,16 @@ export class ConnectCore {
       logFile: path.resolve(options.logFile ?? './logs/event-stream.log'),
       watch: options.watch ?? true,
       pollIntervalMs: options.pollIntervalMs ?? 200,
-      indexBudgetBytes: options.indexBudgetBytes ?? DEFAULT_INDEX_BUDGET_BYTES,
       logToConsole: options.logToConsole ?? false,
+      guardProcess: options.guardProcess ?? false,
+      defaultStartTimeoutMs: options.defaultStartTimeoutMs ?? 0,
+      maxLogMemoryEntries: options.maxLogMemoryEntries ?? DEFAULT_MAX_LOG_MEMORY_ENTRIES,
+      stopTimeoutMs: options.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS,
     };
     this.log = new EventStreamLog({
       filePath: this.options.logFile,
       logToConsole: this.options.logToConsole,
+      maxMemoryEntries: this.options.maxLogMemoryEntries,
     });
   }
 
@@ -120,11 +136,34 @@ export class ConnectCore {
     this.log.record({ type, source, message, ...extra });
   }
 
+  /** 进程级兜底（guardProcess 开启时安装一次，全部开启者共享）：
+   *  模块私下发起的异步失败与漏网的同步异常不再杀死进程，只进事件流水。
+   *  注意：捕获 uncaughtException 后进程会带伤继续运行，宿主需自行权衡。 */
+  private static installProcessGuard(): void {
+    if (ConnectCore.processGuardInstalled) return;
+    ConnectCore.processGuardInstalled = true;
+    const fmt = (e: unknown): string => (e instanceof Error ? (e.stack ?? e.message) : String(e));
+    process.on('unhandledRejection', (reason) => {
+      const text = '捕获未处理的异步失败(Promise): ' + fmt(reason);
+      if (ConnectCore.guardedCores.size === 0) console.error('[connect-core] ' + text);
+      for (const core of ConnectCore.guardedCores) core.writeLog(LOG_TYPES.ERROR, 'core', text);
+    });
+    process.on('uncaughtException', (err) => {
+      const text = '捕获未捕获异常(进程继续运行): ' + fmt(err);
+      if (ConnectCore.guardedCores.size === 0) console.error('[connect-core] ' + text);
+      for (const core of ConnectCore.guardedCores) core.writeLog(LOG_TYPES.ERROR, 'core', text);
+    });
+  }
+
   // ==================== 生命周期：启动核心 == 启动整个软件 ====================
 
   async start(): Promise<void> {
     if (this.startedFlag) throw new Error('Connect-Core 已经启动，请勿重复启动');
     this.startedFlag = true;
+    if (this.options.guardProcess) {
+      ConnectCore.guardedCores.add(this);
+      ConnectCore.installProcessGuard();
+    }
     this.writeLog(LOG_TYPES.CORE_START, 'core', '核心启动');
 
     // 坏 YAML 只记 error、不让核心跟着殉葬。
@@ -145,42 +184,165 @@ export class ConnectCore {
     });
     // 先登记目录里已有的 YAML（模块均为"停"态），再发 core:startup 让匹配者自动启动。
     await this.watcher.start();
-    await this.sendEvent('core:startup', undefined, 'core');
+    await this.sendEvent('startup', undefined, 'core');
   }
 
-  async stop(): Promise<void> {
-    if (!this.startedFlag) return;
-    // 先广播 core:shutdown：让仍在运行的模块抢在停止前释放资源（定时器、连接等）。
-    await this.sendEvent('core:shutdown', undefined, 'core');
-    // 逆序停止：模块间有隐式依赖（后起的往往消费先起的），后启动的先停，避免半悬挂。
-    const running = [...this.modules.values()].filter((m) => m.status === 'running');
-    for (const m of running.reverse()) {
-      await this.stopModule(m.name);
-    }
+  /** 停止整个软件。协议很简单：
+   *  ① 对每个运行模块调用 stop() 钩子——stop() 返回（resolve）即该模块"已关闭"；
+   *  ② 等待全部模块返回"已关闭"：全部返回 → 关闭自己；超过 stopTimeoutMs 仍未返回 → 强制关闭。
+   */
+async stop(): Promise<void> {
+    if (!this.startedFlag || this.stoppingFlag) return;
+    this.stoppingFlag = true;
+    // 冻结文件面：停机期间不再加载/更新/移除配置，杜绝"关到一半冒出新模块"的复活竞态。
     await this.watcher?.stop();
-    // 核心（如 CLI 协议的结果信箱 core:results）也遵守"拥有者消失即注销"的数组规则。
+    // ① 触发全部运行模块的停止逻辑，收集"已关闭"承诺（stop() 返回即"已关闭"）
+    const closing: Promise<void>[] = [];
+    for (const m of [...this.modules.values()]) {
+      if (m.status === 'stopped' || m.status === 'failed') continue;
+      if (m.status === 'starting') {
+        // 启动尚未完成：作废这次启动（代数+1，陈旧结果不得写回），真正的启动流程稍后自行收尾。
+        m.startSeq++;
+        m.status = 'stopped';
+        m.inflightStart = undefined;
+        const cancelled = this.arrays.removeOwner(m.name);
+        this.writeLog(LOG_TYPES.MODULE_STOP, m.name, '启动过程中被取消，模块停止', {
+          module: m.name,
+          removedArrays: cancelled,
+        });
+        continue;
+      }
+      const close = (async () => {
+        try {
+          await m.def?.stop?.(m.ctx!);
+        } catch (err) {
+          this.writeLog(LOG_TYPES.ERROR, m.name, `关闭钩子失败: ${err instanceof Error ? err.message : String(err)}`, {
+            module: m.name,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        m.status = 'stopped';
+        // 模块关闭 -> 其公开数组映射全部注销（数据随拥有者消失，不留残档）。
+        const removed = this.arrays.removeOwner(m.name);
+        this.writeLog(
+          LOG_TYPES.MODULE_STOP,
+          m.name,
+          removed.length > 0 ? `关闭模块，清理 ${removed.length} 个公共数组` : '关闭模块',
+          { module: m.name, removedArrays: removed },
+        );
+      })();
+      closing.push(close);
+    }
+    // ② 等待全部"已关闭"：全部返回 -> 关闭自己；超时 -> 强制关闭
+    const allClosed = Promise.all(closing).then(() => true).catch(() => true);
+    const timeout = new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), this.options.stopTimeoutMs);
+      timer.unref?.();
+    });
+    const closed = await Promise.race([allClosed, timeout]);
+    if (!closed) {
+      const pending = [...this.modules.values()].filter((m) => m.status === 'running').map((m) => m.name);
+      this.writeLog(
+        LOG_TYPES.ERROR,
+        'core',
+        `停止超时：${this.options.stopTimeoutMs}ms 内还有模块未返回"已关闭"，强制关闭` + (pending.length > 0 ? `：${pending.join(', ')}` : ''),
+        { timeoutMs: this.options.stopTimeoutMs, pending },
+      );
+    }
+    // ③ 收尾：核心自身的数组也遵守"拥有者消失即注销"的数组规则。
     this.arrays.removeOwner('core');
     this.startedFlag = false;
+    this.stoppingFlag = false;
     this.writeLog(LOG_TYPES.CORE_STOP, 'core', '核心关闭');
     await this.log.close();
-  }
-
-  /** 立即重新扫描模块文件夹（测试/管理用）。 */
+  }  /** 立即重新扫描模块文件夹（测试/管理用）。 */
   async rescanModules(): Promise<void> {
+    if (this.stoppingFlag) return;
     await this.watcher?.rescan();
   }
 
   // ==================== 框架核心方法 ====================
 
-  /** 核心方法 1：启动模块。reason 为触发启动的事件名（用于日志）。 */
+  /** 核心方法 1：启动模块。reason 为触发启动的事件名（用于日志）。
+   *  启动全程有"代数"护航：关闭/取消会使旧的启动尝试作废，陈旧结果不得写回状态。
+   *  同一模块同时只允许一次启动尝试；可配置超时（YAML 的 startTimeoutMs 或核心选项），
+   *  超时只放弃等待并记日志——悬挂的启动函数本身无法终止，但会被锁住不再自动重试。
+   *  每次启动都从磁盘重新加载模块程序（重启因此拿到最新代码）。 */
   async startModule(name: string, reason?: string): Promise<void> {
+    return this.startModuleCore(name, reason, undefined);
+  }
+
+  /** 请求自身重启：模块（或宿主）替换代码文件后调用本方法，核心先验证新代码再停旧启新。
+   *   - 新代码（loadModuleProgram）加载失败：记录 error、返回 false，旧实例继续运行不受影响
+   *     （原子替换：验证不过就绝不更换，模块无需担心替换过程中途出错）；
+   *   - 加载成功：停止旧实例（其公开数组随拥有者消失）→ 用已验证的 def 直接启动新实例，
+   *     不重新加载（避免工厂函数重复求值产生的副作用）；
+   *   - 状态保存与恢复、版本管理都是模块自己的职责（核心不迁移任何模块变量、不记录版本）。
+   *  返回是否完成替换。 */
+  async reloadModule(name: string): Promise<boolean> {
     const slot = this.modules.get(name);
     if (!slot) throw new Error(`未知模块: ${name}`);
-    // 幂等：事件密集到达时同模块可能被多次点名，已在跑/被禁用的直接跳过。
+    if (!this.startedFlag) throw new Error('核心未启动，不能重启模块');
+    if (this.stoppingFlag) {
+      this.writeLog(LOG_TYPES.MODULE_SKIP, name, '核心正在关闭，跳过重启', { module: name, reason: 'core-stopping' });
+      return false;
+    }
+    if (slot.inflightStart) {
+      this.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块启动/重启进行中，跳过重启', {
+        module: name,
+        reason: 'restart-in-progress',
+      });
+      return false;
+    }
+    if (!slot.config.enabled) {
+      this.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块被禁用，跳过重启', { module: name, reason: 'disabled' });
+      return false;
+    }
+    // ① 先验证新代码：加载失败则保留旧实例继续运行（重启不会"换到一半坏掉"）
+    let def: ModuleDefinition;
+    try {
+      def = await loadModuleProgram(slot.config.file);
+    } catch (err) {
+      const em = err instanceof Error ? err.message : String(err);
+      this.writeLog(LOG_TYPES.ERROR, name, `重启失败: 新代码加载出错，保留旧实例继续运行: ${em}`, {
+        module: name,
+        error: em,
+      });
+      return false;
+    }
+    this.writeLog(LOG_TYPES.MODULE_RESTART, name, '模块请求重启：验证通过，停旧启新', {
+      module: name,
+      file: slot.config.file,
+    });
+    // ② 停止旧实例（stop() 返回即"已关闭"；数组随旧拥有者消失）
+    if (slot.status === 'running' || slot.status === 'starting') {
+      await this.stopModule(name);
+    }
+    // ③ 重新启动（用已验证的 def，不重复加载）
+    await this.startModuleCore(name, 'restart', def);
+    return true;
+  }  /** 启动的实际执行体：preloadedDef 提供时不再加载代码（重启复用已验证的 def）；
+   *  不提供则每次启动都从磁盘加载（配置更新/事件启动的常规路径）。 */
+  private async startModuleCore(name: string, reason: string | undefined, preloadedDef?: ModuleDefinition): Promise<void> {
+    const slot = this.modules.get(name);
+    if (!slot) throw new Error(`未知模块: ${name}`);
+    if (!this.startedFlag) throw new Error('核心未启动，不能启动模块');
+    if (this.stoppingFlag) {
+      this.writeLog(LOG_TYPES.MODULE_SKIP, name, '核心正在关闭，跳过启动', { module: name, reason: 'core-stopping' });
+      return;
+    }
+    // 幂等：事件密集到达时同模块可能被多次点名，已在跑/正在启动/被禁用的直接跳过。
     if (slot.status === 'running') {
       this.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块已在运行，跳过启动', {
         module: name,
         reason: 'already-running',
+      });
+      return;
+    }
+    if (slot.inflightStart) {
+      this.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块启动进行中，跳过重复启动', {
+        module: name,
+        reason: 'start-in-progress',
       });
       return;
     }
@@ -191,34 +353,99 @@ export class ConnectCore {
       });
       return;
     }
-    try {
-      const def = await loadModuleProgram(slot.config.file);
-      const ctx = new ModuleContext(this, name, slot.config);
-      await def.start?.(ctx);
-      slot.def = def;
-      slot.ctx = ctx;
-      slot.status = 'running';
-      slot.startedAt = Date.now();
-      slot.error = undefined;
-      this.writeLog(LOG_TYPES.MODULE_START, name, describeStartReason(reason), {
+    if (slot.startTimedOut && !isManualishStart(reason)) {
+      this.writeLog(LOG_TYPES.MODULE_SKIP, name, '此前启动超时已放弃自动重试，需手动启动或更新配置解锁', {
         module: name,
-        file: slot.config.file,
-        reason: reason ?? 'manual',
+        reason: 'start-timeout-lock',
       });
-    } catch (err) {
-      slot.status = 'failed';
-      slot.error = err instanceof Error ? err.message : String(err);
-      this.writeLog(LOG_TYPES.ERROR, name, `启动失败: ${slot.error}`, {
-        module: name,
-        error: slot.error,
-      });
+      return;
     }
+    slot.startSeq++;
+    const seq = slot.startSeq;
+    slot.status = 'starting';
+    const timeoutMs = Math.max(0, Math.round(slot.config.startTimeoutMs ?? this.options.defaultStartTimeoutMs ?? 0));
+    const run = (async () => {
+      try {
+        const def = preloadedDef ?? (await loadModuleProgram(slot.config.file));
+        const ctx = new ModuleContext(this, name, slot.config);
+        // 等待启动函数完成；配置了超时则只等到期限——超时不终止函数本身（JS 无法强杀），只是不再等它。
+        let timedOut = false;
+        let startError: unknown;
+        await new Promise<void>((resolve) => {
+          let settled = false;
+          const finish = (): void => {
+            if (!settled) {
+              settled = true;
+              resolve();
+            }
+          };
+          const timer = timeoutMs > 0 ? setTimeout(() => { timedOut = true; finish(); }, timeoutMs) : null;
+          Promise.resolve()
+            .then(() => def.start?.(ctx))
+            .then(finish, (e) => { startError = e; finish(); });
+          if (timer) timer.unref();
+        });
+        if (timedOut) {
+          if (seq !== slot.startSeq || this.stoppingFlag || !this.startedFlag) return; // 已被取消，结果作废
+          slot.startTimedOut = true;
+          slot.status = 'failed';
+          this.writeLog(LOG_TYPES.MODULE_START_TIMEOUT, name,
+            `启动超时：超过 ${timeoutMs}ms 未完成，放弃等待并标记失败（自动重试已锁定）`,
+            { module: name, timeoutMs });
+          return;
+        }
+        if (startError) throw startError;
+        // 启动完成前若已被关闭/取消：立即回收这次启动，不写入运行状态（防复活）。
+        if (seq !== slot.startSeq || this.stoppingFlag || !this.startedFlag) {
+          try { await def.stop?.(ctx); } catch { /* 回收失败忽略：核心都在关了 */ }
+          if (seq === slot.startSeq) slot.status = 'stopped';
+          return;
+        }
+        slot.def = def;
+        slot.ctx = ctx;
+        slot.status = 'running';
+        slot.startTimedOut = false;
+        this.writeLog(LOG_TYPES.MODULE_START, name, describeStartReason(reason), {
+          module: name,
+          file: slot.config.file,
+          reason: reason ?? 'manual',
+        });
+      } catch (err) {
+        if (seq !== slot.startSeq) return; // 陈旧尝试，结果作废
+        slot.status = 'failed';
+        const em = err instanceof Error ? err.message : String(err);
+        this.writeLog(LOG_TYPES.ERROR, name, `启动失败: ${em}`, {
+          module: name,
+          error: em,
+        });
+      } finally {
+        if (seq === slot.startSeq) slot.inflightStart = undefined;
+      }
+    })();
+    slot.inflightStart = run;
+    await run;
   }
 
-  /** 核心方法 2：关闭模块。关闭后其公开的数组自动取消映射（自然消失，不留残档）。 */
-  async stopModule(name: string): Promise<void> {
+  /** 核心方法 2：关闭单个模块。关闭后其公开的数组自动取消映射（自然消失，不留残档）。
+   *  停止一个模块：调用其 stop() 钩子并等待返回——模块的 stop() 返回即"已关闭"。
+   *  （全局停机由 stop() 统一广播 + 等待 + 超时强制关闭；本方法用于 CLI 停止指令、
+   *  配置 enabled:false、以及模块请求重启时的停止环节。）
+   */
+async stopModule(name: string): Promise<void> {
     const slot = this.modules.get(name);
     if (!slot) throw new Error(`未知模块: ${name}`);
+    if (slot.status === 'starting') {
+      // 启动尚未完成：作废这次启动（代数+1，陈旧结果不得写回），真正的启动流程稍后自行收尾。
+      slot.startSeq++;
+      slot.status = 'stopped';
+      slot.inflightStart = undefined;
+      const cancelled = this.arrays.removeOwner(name);
+      this.writeLog(LOG_TYPES.MODULE_STOP, name, '启动过程中被取消，模块停止', {
+        module: name,
+        removedArrays: cancelled,
+      });
+      return;
+    }
     if (slot.status !== 'running') {
       this.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块未在运行，跳过关闭', {
         module: name,
@@ -226,16 +453,17 @@ export class ConnectCore {
       });
       return;
     }
+    // 停止单个模块：调用 stop() 钩子并等待其返回——模块的 stop() 返回即"已关闭"。
+    // （全局停机走 stop() 的并行等待 + 超时强制关闭；这里用于单模块的停止指令/配置禁用）
     try {
       await slot.def?.stop?.(slot.ctx!);
-      slot.status = 'stopped';
     } catch (err) {
-      slot.status = 'stopped';
       this.writeLog(LOG_TYPES.ERROR, name, `关闭钩子失败: ${err instanceof Error ? err.message : String(err)}`, {
         module: name,
         error: err instanceof Error ? err.message : String(err),
       });
     }
+    slot.status = 'stopped';
     // 模块关闭 -> 其公开数组映射全部注销（数据随拥有者消失，不留残档）。
     const removed = this.arrays.removeOwner(name);
     this.writeLog(
@@ -244,50 +472,50 @@ export class ConnectCore {
       removed.length > 0 ? `关闭模块，清理 ${removed.length} 个公共数组` : '关闭模块',
       { module: name, removedArrays: removed },
     );
-  }
-
-  /** 核心方法 3：发送事件消息。核心比对事件：启动匹配的模块 + 向监听模块转发。
-   *  事件为两段式：head（事件头，由核心按调用方自动生成来源）由这里注入；
-   *  调用方（模块 ctx.sendEvent / 核心自产 / 宿主）只负责给事件名与内容 data。 */
+  }  /** 核心方法 3：发送事件消息。核心比对事件：启动匹配的模块 + 向监听模块转发。
+   *  事件为两段式：事件名 = 来源:事件名，来源段由这里按调用方自动拼装；
+   *  调用方（模块 ctx.sendEvent / 核心自产 / 宿主）只负责给事件名段与内容 data。 */
   async sendEvent(name: string, data?: unknown, source: string = 'external'): Promise<void> {
     if (!this.startedFlag) throw new Error('Connect-Core 未启动，不能发送事件');
+    // 停机期间冻结事件面：外部与模块的事件一律拒绝（核心自产的关闭广播走 dispatch 内部通道）
+    if (this.stoppingFlag && source !== 'core') {
+      throw new Error('Connect-Core 正在关闭，不能再发送事件');
+    }
+    return this.dispatch(name, data, source);
+  }
+
+  /** 事件派发的实际执行体：sendEvent 校验后的内部通道。 */
+  private async dispatch(name: string, data?: unknown, source: string = 'external'): Promise<void> {
     if (typeof name !== 'string' || name.length === 0) {
       throw new Error('事件名必须是非空字符串');
     }
-    // 自动生成事件头（第一段）：source = 发出模块名，模块无法伪造
-    const event: CoreEvent = { name, head: { source }, data };
-
-    // CLI 请求门铃拦截：cli:request 是核心自己的协议事件（不进普通事件路由，不记入 occurred）
-    if (name === CLI_REQUEST_EVENT) {
-      await this.cliProtocol.handle(event.head.source);
-      return;
-    }
-
-    this.occurred.add(name);
+    // 两段式事件名：来源段由核心按调用方自动拼装（模块名 / core / external），模块无法伪造
+    const fullName = source + ':' + name;
+    const event: CoreEvent = { name: fullName, data };
 
     // 同一事件可兼两种角色：对"没在跑"是启动信号（startEvents），对"在跑"是工作指令（listen）。
     // 1) 比对启动事件：未运行的模块若 startEvents 匹配，则启动它（索引查找，跳过全量比对）
-    const toStart = this.dedupSorted(this.startIndex.lookup(name)).filter(
+    const toStart = this.dedupSorted(this.startIndex.lookup(fullName)).filter(
       (m) => m.status !== 'running' && m.config.enabled,
     );
     for (const m of toStart) {
-      await this.startModule(m.name, name);
+      await this.startModule(m.name, fullName);
     }
 
     // 2) 比对监听事件：收集匹配的监听模块，记录核心动作（转发或丢弃）
-    const listeners = this.dedupSorted(this.listenIndex.lookup(name)).filter((m) => this.isDeliverable(m));
+    const listeners = this.dedupSorted(this.listenIndex.lookup(fullName)).filter((m) => this.isDeliverable(m));
     if (listeners.length === 0) {
-      this.writeLog(LOG_TYPES.EVENT_DROP, source, name, { event: name, data });
+      this.writeLog(LOG_TYPES.EVENT_DROP, source, fullName, { event: fullName, data });
     } else {
-      this.writeLog(LOG_TYPES.EVENT, source, name, {
-        event: name,
+      this.writeLog(LOG_TYPES.EVENT, source, fullName, {
+        event: fullName,
         data,
         recipients: listeners.map((m) => m.name),
       });
     }
 
     // 3) 向监听模块发送事件消息（单个模块失败不影响其他模块）
-    await this.deliverTo(listeners, event, `处理事件 ${name} 失败: `);
+    await this.deliverTo(listeners, event, `处理事件 ${fullName} 失败: `);
   }
 
   // ==================== 事件派发辅助 ====================
@@ -326,7 +554,8 @@ export class ConnectCore {
 
   /**
    * 定向发送事件：只投递给指定的运行中模块（目标无需声明 listen）。
-   * 与 sendEvent 的区别：不比对启动条件、不加入 occurred、不走事件路由表。
+   * 与 sendEvent 的区别：不比对启动条件、不走事件路由表。
+   * 事件名同样为两段式（来源:事件名），来源段按调用方拼装。
    * targets === null 时广播给所有运行中且实现了 onEvent 的模块（等价 CLI 的 send *）。
    * 返回实际接收方的模块名（顺序即投递顺序）。单个模块失败被隔离，不影响其他接收方。
    */
@@ -341,11 +570,12 @@ export class ConnectCore {
         : targets
             .map((nm) => this.modules.get(nm))
             .filter((m): m is ModuleSlot => !!m && this.isDeliverable(m));
+    const fullName = source + ':' + name;
     if (recipients.length === 0) {
-      this.writeLog(LOG_TYPES.EVENT_DROP, source, name, { event: name, data, note: 'cli 定向发送: 无有效接收模块' });
+      this.writeLog(LOG_TYPES.EVENT_DROP, source, fullName, { event: fullName, data, note: '定向发送: 无有效接收模块' });
     } else {
-      this.writeLog(LOG_TYPES.EVENT, source, name, { event: name, data, recipients: recipients.map((m) => m.name), directed: true });
-      await this.deliverTo(recipients, { name, head: { source }, data }, '处理定向事件失败: ');
+      this.writeLog(LOG_TYPES.EVENT, source, fullName, { event: fullName, data, recipients: recipients.map((m) => m.name), directed: true });
+      await this.deliverTo(recipients, { name: fullName, data }, '处理定向事件失败: ');
     }
     return recipients.map((m) => m.name);
   }
@@ -357,11 +587,14 @@ export class ConnectCore {
    *  - target === 'core'：核心作为可寻址收件方（如 CLI 指令），结果由核心用 sendTo 直接回传；
    *  - target === 模块名：投递给"运行中且实现了 onMessage"的模块（显式 opt-in），失败隔离；
    *  - 其余：没有接收方，记日志并返回 false。
-   * 消息只有基础头（head.source=发送者模块名，自动打、不可伪造）+ 内容 data。返回是否送达。
+   * 消息带 source（发送者模块名，自动打、不可伪造）+ 内容 data。返回是否送达。
    */
   async sendTo(target: string, data?: unknown, source: string = 'external'): Promise<boolean> {
     if (!this.startedFlag) throw new Error('Connect-Core 未启动，不能发送定向消息');
-    const message: DirectedMessage = { head: { source }, data };
+    if (this.stoppingFlag && source !== 'core') {
+      throw new Error('Connect-Core 正在关闭，不能再发送定向消息');
+    }
+    const message: DirectedMessage = { source, data };
 
     // 核心 = 可寻址收件方：指令处理器执行后，结果由它直接回传给发起方
     if (target === 'core') {
@@ -386,9 +619,9 @@ export class ConnectCore {
     return false;
   }
 
-  // ==================== CLI 门铃协议（委托 CliProtocol） ====================
+  // ==================== CLI 指令协议（委托 CliProtocol） ====================
 
-  /** 惰性获取 CLI 协议处理器：只有真的收到 cli:request 才创建，普通核心保持零污染。 */
+  /** 惰性获取 CLI 指令协议处理器：只有真的收到定向指令才创建，普通核心保持零污染。 */
   private get cliProtocol(): CliProtocol {
     if (!this.cliProtocolInst) this.cliProtocolInst = new CliProtocol(this);
     return this.cliProtocolInst;
@@ -396,7 +629,7 @@ export class ConnectCore {
 
   // ==================== 模块配置热加载（监听模块文件夹） ====================
 
-  /** 重建事件比对索引：从当前模块配置全量重建（配置加载/更新/移除与 CLI 改预算时调用）。 */
+  /** 重建事件比对索引：从当前模块配置全量重建（配置加载/更新/移除时调用）。 */
   private rebuildIndexes(): void {
     const start: { pattern: string; slot: ModuleSlot }[] = [];
     const listen: { pattern: string; slot: ModuleSlot }[] = [];
@@ -404,48 +637,61 @@ export class ConnectCore {
       for (const p of m.config.startEvents ?? []) start.push({ pattern: p, slot: m });
       for (const p of m.config.listen ?? []) listen.push({ pattern: p, slot: m });
     }
-    this.startIndex.rebuild(start, this.options.indexBudgetBytes);
-    this.listenIndex.rebuild(listen, this.options.indexBudgetBytes);
+    this.startIndex.rebuild(start);
+    this.listenIndex.rebuild(listen);
   }
 
-  /** 当前事件比对索引状态（核心查询 / CLI index 指令展示用）。 */
-  getIndexStats(): { budgetBytes: number; start: MatchIndexStats; listen: MatchIndexStats } {
-    return {
-      budgetBytes: this.options.indexBudgetBytes,
-      start: this.startIndex.stats(),
-      listen: this.listenIndex.stats(),
-    };
-  }
-
-  /** 设置事件比对索引字节预算（下限保护，防误设把索引完全关掉）并重建索引。返回最新索引状态。 */
-  setIndexBudgetBytes(byteBudget: number): { budgetBytes: number; start: MatchIndexStats; listen: MatchIndexStats } {
-    this.options.indexBudgetBytes = Math.max(Math.round(byteBudget), MIN_INDEX_BUDGET_BYTES);
-    this.rebuildIndexes();
-    return this.getIndexStats();
-  }
-
-  private handleConfigLoad(cfg: ModuleConfig, yamlPath: string): void {
+  /** 配置加载：接受注册返回 true；拒绝（模块名已被其他 YAML 占用）返回 false。
+   *  同名模块一律不准注册 —— 名字是模块的全局身份，允许顶替等于允许"伪装成同名模块"上线
+   *  （防注入风险）。拒绝的文件不被 watcher 记账，每轮扫描都会重新请求并各记一条 error，
+   *  持续可见直到同名问题被修复（与坏 YAML 的"每轮重试提醒"同语义）。 */
+  private handleConfigLoad(cfg: ModuleConfig, yamlPath: string): boolean {
+    if (this.stoppingFlag) return true; // 停机中：文件面已冻结，此处只兜住在途扫描的收尾
+    const existing = this.modules.get(cfg.name);
+    if (existing) {
+      // 已有同名模块：无论其是否运行，一律拒绝新文件注册
+      this.writeLog(LOG_TYPES.ERROR, cfg.name,
+        `配置加载被拒绝：模块名 ${cfg.name} 已被 ${existing.yamlPath} 注册（同名模块不允许安装）`,
+        { module: cfg.name, file: cfg.file, conflict: existing.yamlPath },
+      );
+      return false;
+    }
     this.modules.set(cfg.name, {
       name: cfg.name,
       config: cfg,
       yamlPath,
       status: 'stopped',
       seq: ++this.slotSeq,
+      startSeq: 0,
     });
     this.rebuildIndexes();
     this.writeLog(LOG_TYPES.CONFIG_LOAD, cfg.name, `加载配置 ${cfg.name}`, {
       module: cfg.name,
       file: cfg.file,
     });
-    // 新模块可能错过 core:startup：其启动事件若在 occurred 历史里出现过，立即补启动。
-    if (cfg.enabled !== false && this.occurred.size > 0) {
-      const happened = [...this.occurred].some((e) => anyEventMatches(cfg.startEvents, e));
-      if (happened) void this.startModule(cfg.name, 'config-load');
-    }
+    return true;
   }
 
-  private async handleConfigUpdate(cfg: ModuleConfig, yamlPath: string): Promise<void> {
+  /** 配置更新：本文件（yamlPath 相同）的更新照常应用返回 true；
+   *  别的文件来抢同名模块名（yamlPath 不同）返回 false —— 拒绝顶替，防同名伪装。
+   *  **YAML 更新只重载 YAML 本身，不重载代码、不重启模块**（代码重载由模块自行发起，
+   *  见 requestReload）。应用范围：
+   *   - 更新模块注册（config 字段）与比对索引（startEvents/listen 变化即时生效）；
+   *   - 运行中的模块：刷新其 ctx.config 引用（模块自行决定何时读取/如何应用新配置），
+   *     实例与代码不动；
+   *   - 配置把 enabled 改为 false：停止运行中的模块（配置驱动的停止，同样不重载代码）；
+   */
+  private async handleConfigUpdate(cfg: ModuleConfig, yamlPath: string): Promise<boolean> {
+    if (this.stoppingFlag) return true; // 停机中：不再应用任何配置变化
     const prev = this.modules.get(cfg.name);
+    // 同名不同文件：本文件不是该模块名当前归属的 YAML，拒绝应用（模块名全局唯一，先注册者保留）
+    if (prev && prev.yamlPath !== yamlPath) {
+      this.writeLog(LOG_TYPES.ERROR, cfg.name,
+        `配置更新被拒绝：模块名 ${cfg.name} 已被 ${prev.yamlPath} 占用（同名模块不允许安装）`,
+        { module: cfg.name, file: cfg.file, conflict: prev.yamlPath },
+      );
+      return false;
+    }
     const wasRunning = prev?.status === 'running';
     this.modules.set(cfg.name, {
       name: cfg.name,
@@ -454,26 +700,27 @@ export class ConnectCore {
       status: wasRunning ? 'running' : prev?.status ?? 'stopped',
       def: prev?.def,
       ctx: prev?.ctx,
-      startedAt: prev?.startedAt,
-      error: prev?.error,
       seq: prev?.seq ?? ++this.slotSeq,
+      startSeq: (prev?.startSeq ?? 0) + 1, // 配置更新使旧代启动全部作废
     });
+    // 运行中的模块：只刷新配置引用，不重启、不重载代码
+    if (wasRunning && prev?.ctx) {
+      prev.ctx.refreshConfig(cfg);
+    }
     this.rebuildIndexes();
-    this.writeLog(LOG_TYPES.CONFIG_UPDATE, cfg.name, `更新配置 ${cfg.name}`, {
+    this.writeLog(LOG_TYPES.CONFIG_UPDATE, cfg.name, `更新配置 ${cfg.name}（YAML 层生效，模块实例与代码不动）`, {
       module: cfg.name,
       file: cfg.file,
     });
-    if (wasRunning) {
-      // 配置变化：重启模块以应用新配置（旧数组随停止消失，start 重新映射新对象）
+    if (wasRunning && cfg.enabled === false) {
+      // 配置禁用：停止运行中的模块（配置驱动的停止，不重载代码；重启用新配置）
       await this.stopModule(cfg.name);
-      if (cfg.enabled !== false) await this.startModule(cfg.name, 'config-update');
-    } else if (cfg.enabled !== false) {
-      const happened = [...this.occurred].some((e) => anyEventMatches(cfg.startEvents, e));
-      if (happened) await this.startModule(cfg.name, 'config-update');
     }
+    return true;
   }
 
   private async handleConfigRemove(name: string): Promise<void> {
+    if (this.stoppingFlag) return; // 停机中：不再应用任何配置变化
     const slot = this.modules.get(name);
     if (!slot) return;
     if (slot.status === 'running') await this.stopModule(name);
@@ -484,7 +731,7 @@ export class ConnectCore {
 
   // ==================== 公共数组（映射语义） ====================
 
-  /** 公开数组：把模块的数组对象映射到名字（存引用，不拷贝）。 */
+  /** 公开数组：把模块的数组对象映射到名字（name 为第三段，前两段自动拼装，存引用不拷贝）。 */
   exposeArray(name: string, owner: string, items: unknown[] = []): void {
     this.arrays.expose(name, owner, items);
   }
@@ -494,19 +741,9 @@ export class ConnectCore {
     this.arrays.unexpose(name, owner);
   }
 
-  /** 拉取特定数组：返回被映射的对象引用（O(1)），像原生数组一样直接使用。 */
-  array<T = any>(name: string): T[] {
-    return this.arrays.get<T>(name);
-  }
-
-  /** 列出所有公共数组名。 */
-  listArrays(): string[] {
-    return this.arrays.list();
-  }
-
-  /** 查询公共数组的拥有者。 */
-  arrayOwner(name: string): string | undefined {
-    return this.arrays.ownerOf(name);
+  /** 匹配拉取：模式不含通配符 -> 返回该数组引用；含通配符 -> 返回 { 数组全名: 引用 }。 */
+  array<T = any>(pattern: string): T[] | Record<string, T[]> {
+    return this.arrays.get<T>(pattern);
   }
 
   // ==================== 查询与模块日志 ====================
@@ -516,8 +753,6 @@ export class ConnectCore {
       name: m.name,
       config: m.config,
       status: m.status,
-      startedAt: m.startedAt,
-      error: m.error,
     }));
   }
 
@@ -528,8 +763,6 @@ export class ConnectCore {
       name: m.name,
       config: m.config,
       status: m.status,
-      startedAt: m.startedAt,
-      error: m.error,
     };
   }
 

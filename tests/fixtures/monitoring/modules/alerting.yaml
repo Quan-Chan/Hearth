@@ -3,6 +3,6 @@ file: ./alerting.cjs
 startEvents:
   - "core:startup"
 listen:
-  - "app:metric"
+  - "*:app:metric"
 config:
   threshold: 100

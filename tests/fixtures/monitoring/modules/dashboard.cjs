@@ -2,10 +2,10 @@
 module.exports = {
   name: 'dashboard',
   start(ctx) {
-    ctx.exposeArray('alerts:history', []);
+    ctx.exposeArray('history', []);
   },
   onEvent(ctx, event) {
-    if (event.name !== 'alert:fired') return;
-    ctx.array('alerts:history').push({ name: event.data.name, value: event.data.value, at: Date.now() });
+    if (!event.name.endsWith(':alert:fired')) return;
+    ctx.array('history').push({ name: event.data.name, value: event.data.value, at: Date.now() });
   },
 };

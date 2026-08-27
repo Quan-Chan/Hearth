@@ -2,7 +2,7 @@
 module.exports = {
   name: 'cooler',
   onEvent(ctx, event) {
-    if (event.name !== 'home:cooling') return;
+    if (!event.name.endsWith(':home:cooling')) return;
     ctx.log('开始制冷:', event.data.room);
   },
 };

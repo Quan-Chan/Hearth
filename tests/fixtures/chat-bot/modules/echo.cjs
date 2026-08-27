@@ -2,7 +2,7 @@
 module.exports = {
   name: 'echo',
   onEvent(ctx, event) {
-    if (event.name !== 'chat:command') return;
+    if (!event.name.endsWith(':chat:command')) return;
     const c = event.data;
     if (c.command === 'echo') {
       ctx.sendEvent('chat:reply', { user: c.user, text: c.args.join(' ') });

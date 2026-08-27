@@ -3,4 +3,4 @@ file: ./collector.cjs
 startEvents:
   - "core:startup"
 listen:
-  - "app:metric"
+  - "*:app:metric"

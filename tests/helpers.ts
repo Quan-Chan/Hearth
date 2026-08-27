@@ -36,6 +36,13 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** 精确拉取公共数组（匹配拉取接口的数组形态断言助手）：模式不含通配符时返回数组引用。 */
+export function arr<T = any>(core: { array(pattern: string): unknown }, pattern: string): T[] {
+  const r = core.array(pattern);
+  if (Array.isArray(r)) return r as T[];
+  throw new Error('匹配拉取返回了映射，需要精确名: ' + pattern);
+}
+
 /** 写入模块夹具：YAML 配置 + CJS 程序。返回 { yamlPath, programPath }。 */
 export function writeModuleFixture(
   dir: string,

@@ -1,0 +1,6 @@
+name: shapeshifter
+file: ../assets/shapeshifter-a.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "tick"

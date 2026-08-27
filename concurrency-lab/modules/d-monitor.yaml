@@ -1,0 +1,6 @@
+name: d-monitor
+file: ./d-monitor.cjs
+startEvents:
+  - "core:startup"
+listen:
+  - "beat"

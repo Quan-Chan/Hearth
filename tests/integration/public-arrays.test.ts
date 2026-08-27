@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ConnectCore } from '../../src/core/ConnectCore';
-import { mkTmpDir, rmDir, yamlFor } from '../helpers';
+import { mkTmpDir, rmDir, arr, yamlFor } from '../helpers';
+
+/** 匹配拉取全名清单（通配方式）。 */
+function arrayNames(core: ConnectCore): string[] {
+  return Object.keys(core.array('*') as Record<string, unknown>);
+}
 
 function makeDir(dir: string): void {
   fs.writeFileSync(
@@ -11,8 +16,8 @@ function makeDir(dir: string): void {
     `module.exports = {
   name: 'producer',
   start(ctx) {
-    ctx.exposeArray('shared:items', [{ id: 1 }, { id: 2 }]);
-    ctx.exposeArray('producer:own', ['p']);
+    ctx.exposeArray('items', [{ id: 1 }, { id: 2 }]);
+    ctx.exposeArray('own', ['p']);
   },
 };
 `,
@@ -22,12 +27,12 @@ function makeDir(dir: string): void {
     `module.exports = {
   name: 'consumer',
   start(ctx) {
-    ctx.exposeArray('consumer:own', []);
+    ctx.exposeArray('own', []);
   },
   onEvent(ctx, event) {
-    if (event.name === 'consume') {
+    if (event.name.endsWith(':consume')) {
       // 模块 B 编辑模块 A 公开的数组：直接拿引用，原生操作
-      const items = ctx.array('shared:items');
+      const items = ctx.array('public:producer:items');
       items.push({ id: items.length + 1 });
     }
   },
@@ -35,7 +40,7 @@ function makeDir(dir: string): void {
 `,
   );
   fs.writeFileSync(path.join(dir, 'producer.yaml'), yamlFor('producer', { startEvents: ['core:startup'] }));
-  fs.writeFileSync(path.join(dir, 'consumer.yaml'), yamlFor('consumer', { startEvents: ['core:startup'], listen: ['consume'] }));
+  fs.writeFileSync(path.join(dir, 'consumer.yaml'), yamlFor('consumer', { startEvents: ['core:startup'], listen: ['*:consume'] }));
 }
 
 test('一次修改处处有效：A 公开 -> B 编辑 -> C（核心）读取可见', async () => {
@@ -44,15 +49,14 @@ test('一次修改处处有效：A 公开 -> B 编辑 -> C（核心）读取可�
     makeDir(dir);
     const core = new ConnectCore({ moduleDir: dir, watch: false });
     await core.start();
-    assert.deepEqual(core.listArrays().sort(), ['consumer:own', 'producer:own', 'shared:items']);
-    assert.equal(core.arrayOwner('shared:items'), 'producer');
+    assert.deepEqual(arrayNames(core).sort(), ['public:consumer:own', 'public:producer:items', 'public:producer:own']);
     // 模块 B（consumer）编辑模块 A（producer）公开的数组（原生引用）
     await core.sendEvent('consume');
     await core.sendEvent('consume');
     // C 读取可见 B 的修改
-    assert.deepEqual(core.array('shared:items'), [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    assert.deepEqual(arr(core, 'public:producer:items'), [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
     // 拿到的始终是同一个对象引用
-    assert.equal(core.array('shared:items'), core.array('shared:items'));
+    assert.equal(arr(core, 'public:producer:items'), arr(core, 'public:producer:items'));
     await core.stop();
   } finally {
     rmDir(dir);
@@ -65,15 +69,15 @@ test('取消公开：仅拥有者可以，取消后他人不可拉取', async ()
     makeDir(dir);
     const core = new ConnectCore({ moduleDir: dir, watch: false });
     await core.start();
-    // 消费者不能取消别人的数组
-    assert.throws(() => core.unexposeArray('shared:items', 'consumer'), /无权取消公开/);
+    // 消费者不能取消别人的数组（消费者名下不存在该数组）
+    assert.throws(() => core.unexposeArray('items', 'consumer'), /不存在/);
     // 拥有者可以
-    core.unexposeArray('shared:items', 'producer');
-    assert.deepEqual(core.listArrays(), ['consumer:own', 'producer:own']);
-    assert.throws(() => core.array('shared:items'), /不存在/);
-    // 重复公开（无论谁）都是误用，抛错
-    assert.throws(() => core.exposeArray('producer:own', 'consumer', []), /已存在/);
-    assert.throws(() => core.exposeArray('producer:own', 'producer', []), /已存在/);
+    core.unexposeArray('items', 'producer');
+    assert.deepEqual(arrayNames(core).sort(), ['public:consumer:own', 'public:producer:own']);
+    assert.throws(() => arr(core, 'public:producer:items'), /不存在/);
+    // 同拥有者重复公开自己的数组：抛错（不同拥有者的同名第三段不冲突）
+    assert.throws(() => core.exposeArray('own', 'producer', []), /已存在/);
+    core.exposeArray('extra', 'consumer', []);
     await core.stop();
   } finally {
     rmDir(dir);
@@ -86,17 +90,33 @@ test('模块停止：其公开数组自动消失，不留残档；重启后是�
     makeDir(dir);
     const core = new ConnectCore({ moduleDir: dir, watch: false });
     await core.start();
-    assert.deepEqual(core.listArrays().sort(), ['consumer:own', 'producer:own', 'shared:items']);
+    assert.deepEqual(arrayNames(core).sort(), ['public:consumer:own', 'public:producer:items', 'public:producer:own']);
     // 停止 producer -> 它的数组全部消失
     await core.stopModule('producer');
-    assert.deepEqual(core.listArrays(), ['consumer:own']);
-    assert.throws(() => core.array('shared:items'), /不存在/);
-    assert.throws(() => core.array('producer:own'), /不存在/);
+    assert.deepEqual(arrayNames(core).sort(), ['public:consumer:own']);
+    assert.throws(() => arr(core, 'public:producer:items'), /不存在/);
+    assert.throws(() => arr(core, 'public:producer:own'), /不存在/);
     assert.ok(core.log.byType('module-stop').some((s) => s.module === 'producer' && Array.isArray(s.removedArrays) && s.removedArrays.length === 2));
     // 重启 producer -> 重新映射全新数组（旧数据不残留）
     await core.startModule('producer', 'manual');
-    assert.deepEqual(core.array('producer:own'), ['p']);
-    assert.deepEqual(core.array('shared:items'), [{ id: 1 }, { id: 2 }]);
+    assert.deepEqual(arr(core, 'public:producer:own'), ['p']);
+    assert.deepEqual(arr(core, 'public:producer:items'), [{ id: 1 }, { id: 2 }]);
+    await core.stop();
+  } finally {
+    rmDir(dir);
+  }
+});
+
+test('匹配拉取通配：按模式取多个数组', async () => {
+  const dir = mkTmpDir('arr');
+  try {
+    makeDir(dir);
+    const core = new ConnectCore({ moduleDir: dir, watch: false });
+    await core.start();
+    const matches = core.array('public:producer:*') as Record<string, unknown[]>;
+    assert.deepEqual(Object.keys(matches).sort(), ['public:producer:items', 'public:producer:own']);
+    const all = core.array('*') as Record<string, unknown[]>;
+    assert.equal(Object.keys(all).length, 3);
     await core.stop();
   } finally {
     rmDir(dir);
@@ -109,13 +129,14 @@ test('核心直接操作公共数组（原生引用操作，数组操作不记�
     makeDir(dir);
     const core = new ConnectCore({ moduleDir: dir, watch: false });
     await core.start();
-    core.exposeArray('admin:list', 'admin', ['a', 'b', 'c']);
-    core.array('admin:list').splice(1, 1);
-    core.array('admin:list').unshift('z');
-    core.array('admin:list').push('d', 'e');
-    assert.deepEqual(core.array('admin:list'), ['z', 'a', 'c', 'd', 'e']);
+    core.exposeArray('list', 'admin', ['a', 'b', 'c']);
+    const list = arr(core, 'public:admin:list');
+    list.splice(1, 1);
+    list.unshift('z');
+    list.push('d', 'e');
+    assert.deepEqual(arr(core, 'public:admin:list'), ['z', 'a', 'c', 'd', 'e']);
     // 拉取不存在的数组抛错
-    assert.throws(() => core.array('nope'), /不存在/);
+    assert.throws(() => (core.array as any)('public:admin:nope'), /不存在/);
     // 数组操作不产生任何日志（高频编辑不会爆日志）
     const arrayLogs = core.log.all().filter((e) => String(e.type).startsWith('array'));
     assert.equal(arrayLogs.length, 0);

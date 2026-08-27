@@ -1,0 +1,4 @@
+name: missing-8
+file: ./no-such-8.cjs
+startEvents:
+  - "tick"

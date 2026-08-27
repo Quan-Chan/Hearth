@@ -1,0 +1,4 @@
+name: missing-52
+file: ./no-such-52.cjs
+startEvents:
+  - "tick"

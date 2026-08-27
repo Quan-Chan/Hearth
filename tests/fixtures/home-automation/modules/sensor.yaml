@@ -3,4 +3,4 @@ file: ./sensor.cjs
 startEvents:
   - "core:startup"
 listen:
-  - "home:motion"
+  - "*:home:motion"
