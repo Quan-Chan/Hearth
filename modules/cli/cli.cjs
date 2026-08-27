@@ -94,7 +94,8 @@ function helpText() {
     '  send <目标|*> <名称> [JSON]  定向发送事件（目标=模块名，逗号分隔；* 广播）',
     '  state                        查看模块与公共数组',
     '  log [过滤词] [条数]          查看日志时间线（读文件 grep）',
-    '  help / exit',
+    '  print                        输出测试文本',
+    '  help / exit / quit',
   ].join('\n');
 }
 

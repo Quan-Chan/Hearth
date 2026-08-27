@@ -20,7 +20,7 @@
  *   此后每一次 sendEvent 走同一条三步：① 把 startEvents 命中的未运行模块拉起来
  *   （模块间的 DAG 由此涌现）；② 收集 listen 命中的监听者（无人认领则记 event-drop）；
  *   ③ 逐个派发事件消息，单点失败只记 error、不影响其他模块。
- *   配置热加载不重启核心：监听器感知到文件增/改/删，就地 加载/重启/移除 模块并重建索引。
+ *   配置热加载不重启核心：监听器感知到文件增/改/删，当场 加载/重启/移除 模块并重建索引。
  *   stop() -> 逐个调用模块 stop() 等返回"已关闭"（超时强制关闭）-> 关闭日志。
  *
  * 文件组织（一个文件 = 一个功能部分，避免碎片化）：
@@ -168,6 +168,8 @@ export class ConnectCore {
     if (!this.startedFlag || this.stoppingFlag) return;
     this.stoppingFlag = true;
     // 冻结文件面：停机期间不再加载/更新/移除配置，杜绝"关到一半冒出新模块"的复活竞态。
+    // 先停 watcher 再停模块的原因：若顺序反过来，停模块期间新 YAML 会触发新模块启动，
+    // 停机集合就会边关边长，永远关不完；冻结文件面后模块集合固定，stopAll 关的就是全集。
     await this.watcher?.stop();
     await this.manager.stopAll();
     // 收尾：核心自身的数组也遵守"拥有者消失即注销"的数组规则。

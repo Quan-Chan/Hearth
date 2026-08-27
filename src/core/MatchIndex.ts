@@ -28,7 +28,9 @@ export class MatchIndex<T> {
     }
   }
 
-  /** 匹配事件名：精确表 O(1) + 通配列表逐条比对。同一槽可能因多个条件命中出现多次，调用方按需去重。 */
+  /** 匹配事件名：精确表 O(1) + 通配列表逐条比对。
+   *  同一槽可能因多个条件命中出现多次，这里不去重——去重后的顺序由调用方
+   *  （EventDispatcher.dedupSorted）统一按加载序号排，保证与全量比对结果一致。 */
   lookup(name: string): T[] {
     const out: T[] = [];
     const hit = this.exact.get(name);

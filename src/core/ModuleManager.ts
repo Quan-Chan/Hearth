@@ -282,6 +282,8 @@ export class ModuleManager {
       if (m.status === 'stopped' || m.status === 'failed') continue;
       if (m.status === 'starting') {
         // 启动尚未完成：作废这次启动（代数+1，陈旧结果不得写回），真正的启动流程稍后自行收尾。
+        // 不等它的原因：启动函数可能悬挂（如等待外部资源），停机时限不应被它拖住；
+        // 作废后启动流程检测到代数已变，会自动回收（调用 stop 并放弃写运行状态）。
         m.startSeq++;
         m.status = 'stopped';
         m.inflightStart = undefined;
@@ -365,7 +367,8 @@ export class ModuleManager {
       def: prev?.def,
       ctx: prev?.ctx,
       seq: prev?.seq ?? ++this.slotSeq,
-      startSeq: (prev?.startSeq ?? 0) + 1, // 配置更新使旧代启动全部作废
+      startSeq: (prev?.startSeq ?? 0) + 1, // 配置更新使旧代启动全部作废：在途启动用的是旧配置（如旧的 startTimeoutMs），
+      // 结果不应写回新配置的槽位，代数+1 让陈旧启动在完成时自我作废。
     });
     // 运行中的模块：只刷新配置引用，不重启、不重载代码
     if (wasRunning && prev?.ctx) {

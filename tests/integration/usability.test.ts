@@ -257,8 +257,8 @@ test('模块改写自己的 YAML：startEvents 变化，新的启动事件可自
 
 // ==================== 测试 5：事件两段式——事件名（来源:事件名，来源段由核心拼装）+ data（内容：模块写） ====================
 
-const HEAD_RECV_CJS = `module.exports = {
-  name: 'headrecv',
+const SRC_RECV_CJS = `module.exports = {
+  name: 'srcrecv',
   start(ctx) { ctx.exposeArray('got', []); },
   onEvent(ctx, event) {
     // 接收方看到的完整事件：完整事件名（来源:事件名）+ 内容(data)
@@ -266,41 +266,41 @@ const HEAD_RECV_CJS = `module.exports = {
   },
 };
 `;
-const HEAD_SEND_CJS = `module.exports = {
-  name: 'headsend',
+const SRC_SEND_CJS = `module.exports = {
+  name: 'srcsend',
   start(ctx) { ctx.exposeArray('marks', []); },
   onEvent(ctx, event) {
-    if (!event.name.endsWith(':head:go')) return;
+    if (!event.name.endsWith(':src:go')) return;
     // 模块只写事件名段与内容，来源段（模块名）由核心自动拼装
-    ctx.sendEvent('head:relay', { note: '模块自己写的内容' });
+    ctx.sendEvent('src:relay', { note: '模块自己写的内容' });
   },
 };
 `;
 
 test('事件两段式：事件名为 来源:事件名，来源段由核心拼装，模块只写 data(内容)', async () => {
-  const dir = mkTmpDir('head');
+  const dir = mkTmpDir('src2part');
   try {
-    fs.writeFileSync(path.join(dir, 'headsend.cjs'), HEAD_SEND_CJS);
-    fs.writeFileSync(path.join(dir, 'headsend.yaml'), yamlFor('headsend', { startEvents: ['core:startup'], listen: ['*:head:go'] }));
-    fs.writeFileSync(path.join(dir, 'headrecv.cjs'), HEAD_RECV_CJS);
-    fs.writeFileSync(path.join(dir, 'headrecv.yaml'), yamlFor('headrecv', { startEvents: ['core:startup'], listen: ['core:startup', '*:head:relay'] }));
+    fs.writeFileSync(path.join(dir, 'srcsend.cjs'), SRC_SEND_CJS);
+    fs.writeFileSync(path.join(dir, 'srcsend.yaml'), yamlFor('srcsend', { startEvents: ['core:startup'], listen: ['*:src:go'] }));
+    fs.writeFileSync(path.join(dir, 'srcrecv.cjs'), SRC_RECV_CJS);
+    fs.writeFileSync(path.join(dir, 'srcrecv.yaml'), yamlFor('srcrecv', { startEvents: ['core:startup'], listen: ['core:startup', '*:src:relay'] }));
     const core = new ConnectCore({ moduleDir: dir, watch: false });
     await core.start();
     // ① 核心自产事件：完整名 'core:startup'，无内容
-    const startupSeen = arr(core as any, 'public:headrecv:got').find((e: any) => e.name === 'core:startup') as any;
+    const startupSeen = arr(core as any, 'public:srcrecv:got').find((e: any) => e.name === 'core:startup') as any;
     assert.ok(startupSeen, 'core:startup 应被监听模块看到');
     assert.equal(startupSeen.data, undefined);
     // ② 模块发出的事件：完整名为 来源:事件名（来源段=发出模块名），内容是模块写的
-    await core.sendEvent('head:go');
-    const relayed = arr(core as any, 'public:headrecv:got').find((e: any) => e.name === 'headsend:head:relay') as any;
-    assert.ok(relayed, 'head:relay 应到达监听模块');
+    await core.sendEvent('src:go');
+    const relayed = arr(core as any, 'public:srcrecv:got').find((e: any) => e.name === 'srcsend:src:relay') as any;
+    assert.ok(relayed, 'src:relay 应到达监听模块');
     assert.deepEqual(relayed.data, { note: '模块自己写的内容' });
     // ③ 宿主直接调用：来源段为 'external'
-    await core.sendEvent('head:relay', { from: 'host' });
-    const hostSeen = arr(core as any, 'public:headrecv:got').filter((e: any) => e.name.endsWith(':head:relay')).at(-1) as any;
-    assert.equal(hostSeen.name, 'external:head:relay');
+    await core.sendEvent('src:relay', { from: 'host' });
+    const hostSeen = arr(core as any, 'public:srcrecv:got').filter((e: any) => e.name.endsWith(':src:relay')).at(-1) as any;
+    assert.equal(hostSeen.name, 'external:src:relay');
     // ④ 通配符可响应任意来源的同名事件
-    const byName = arr(core as any, 'public:headrecv:got').filter((e: any) => e.name.endsWith(':head:relay'));
+    const byName = arr(core as any, 'public:srcrecv:got').filter((e: any) => e.name.endsWith(':src:relay'));
     assert.equal(byName.length, 2);
     await core.stop();
   } finally {

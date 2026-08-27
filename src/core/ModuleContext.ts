@@ -56,7 +56,9 @@ export class ModuleContext {
   }
 
   /** 匹配拉取：模式含通配符 -> 匹配全名返回 { 数组全名: 引用 }；否则返回该数组引用。
-   *  模式为三段式全名（public:模块:名）时直接拉取；否则按本模块名自动补齐前两段（拉自己的数组）。 */
+   *  模式为三段式全名（public:模块:名）时直接拉取；否则按本模块名自动补齐前两段（拉自己的数组）。
+   *  自动补齐的原因：模块日常只碰自己的数组，写全名冗长且易错；通配模式涉及别人的数组
+   *  （名字里带别人的模块名），无法推断，必须写全名。 */
   array<T = any>(pattern: string): T[] | Record<string, T[]> {
     if (!pattern.includes('*') && !pattern.includes('?') && !pattern.startsWith(ARRAY_KEY_PREFIX + ':')) {
       return this.core.array<T>(arrayKey(this.moduleName, pattern));

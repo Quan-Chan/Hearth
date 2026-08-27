@@ -54,7 +54,9 @@ export class ArrayRegistry {
     this.map.delete(key);
   }
 
-  /** 匹配拉取：模式不含通配符 -> 精确返回被映射对象引用；含通配符 -> 返回 { 数组全名: 引用 } 映射。 */
+  /** 匹配拉取：模式不含通配符 -> 精确返回被映射对象引用（精确名 = 明确指定某一个数组，
+   *  不存在即调用方写错，抛错暴露；含通配符 -> 返回 { 数组全名: 引用 } 映射（模糊查询
+   *  允许合法地零命中，返回空对象而非抛错）。 */
   get<T = any>(pattern: string): T[] | Record<string, T[]> {
     if (!pattern.includes('*') && !pattern.includes('?')) {
       const arr = this.map.get(pattern);

@@ -17,7 +17,9 @@ type CliHandler = (args: Record<string, unknown>, result: Record<string, unknown
 export class CliProtocol {
   private readonly core: ConnectCore;
 
-  /** 指令派发表：cmd -> 处理器。每个处理器只做三件事——解析参数、执行、把结果写进 result.result。 */
+  /** 指令派发表：cmd -> 处理器。
+   *  用表驱动而非 if/else 链的原因：新增指令只加一个条目，解析/执行/回传的公共骨架
+   *  （handleDirected）保持不变；每个处理器只做三件事——解析参数、执行、把结果写进 result.result。 */
   private readonly handlers: Record<string, CliHandler> = {
     // 生成一个自定义事件（来源沿用请求方；事件名为两段式，来源段由核心拼装）
     event: async (args, result, source) => {

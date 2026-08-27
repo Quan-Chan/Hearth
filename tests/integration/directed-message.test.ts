@@ -91,7 +91,7 @@ const SINK_CJS = `module.exports = {
 
 // ---------------- 测试 1 + 2：模块->模块直发 / opt-in / 送达凭据 ----------------
 
-test('定向消息：模块直发模块，onMessage 收 head+内容，可回发；无接收方时 sendTo 返回 false', async () => {
+test('定向消息：模块直发模块，onMessage 收 source+内容，可回发；无接收方时 sendTo 返回 false', async () => {
   const dir = mkTmpDir('dmsg');
   try {
     fs.writeFileSync(path.join(dir, 'hub.cjs'), HUB_CJS);
@@ -106,7 +106,7 @@ test('定向消息：模块直发模块，onMessage 收 head+内容，可回发�
     await core.sendEvent('go1');
     // 送达凭据：hub 收到（true），ghost 不存在（false）
     assert.deepEqual(arr(core as any, 'public:sender:receipt'), [true, false]);
-    // hub 收到：消息带基础头（from=sender）与内容
+    // hub 收到：消息带 source（发送者=sender）与内容
     assert.deepEqual(arr(core as any, 'public:hub:got'), [{ from: 'sender', data: { ping: 'hello' } }]);
     // hub 回发的 echo 直达 sender
     await waitFor(() => arr(core as any, 'public:sender:echo').length === 1);
