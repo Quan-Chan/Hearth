@@ -24,7 +24,7 @@ const IGNORE = [norm('[English](README.md) | [中文](README.zh.md)')];
 
 // 分组键：语言+层级。需求与编写要求单独一组（不参与查重）。
 const groupOf = (f) => {
-  if (f.includes('requirements') || f.includes('doc-writing')) return 'req';
+  if (f.includes('requirements')) return 'req';
   const sep = f.includes('\\') ? '\\' : '/';
   const lang = f.includes('docs' + sep + 'zh' + sep) ? 'zh' : f.includes('docs' + sep + 'en' + sep) ? 'en' : 'root';
   const layer = f.includes(sep + 'usage' + sep) ? 'usage' : f.includes(sep + 'implementation' + sep) ? 'impl' : 'root';
