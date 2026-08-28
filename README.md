@@ -1,5 +1,7 @@
 # Connect-Core
 
+[English](README.en.md) | [中文](README.md)
+
 Connect-Core 是一个事件驱动的模块化框架核心，运行在 Node.js 上，使用 TypeScript 编写。
 
 软件由核心与模块组成。核心的职责：
