@@ -33,11 +33,11 @@ Start from the command line (reads `connect-core.yaml` from the root):
 npm start
 ```
 
-For programmatic startup and core options, see the usage docs (`docs/使用/宿主集成接口.md`).
+For programmatic startup and core options, see the usage docs (`docs/zh/使用/宿主集成接口.md`).
 
 When the core starts, it emits a `core:startup` event; modules declaring it as a start event start automatically. YAML configs in the module folder are watched continuously; additions, modifications, and removals take effect immediately. A module consists of a YAML and a program file; see the usage docs for examples.
 
 ## Documentation
 
-- Usage docs (module authoring and host integration): `docs/使用/`
-- Implementation docs (internals and known issues): `docs/实现/`
+- Usage docs (module authoring and host integration): `docs/zh/使用/`
+- Implementation docs (internals and known issues): `docs/zh/实现/`

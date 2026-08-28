@@ -58,12 +58,12 @@ sendEvent 的完整路径：
 
 ## 文档导航
 
-- 事件派发与比对索引：docs/实现/事件派发.md
-- 模块生命周期：docs/实现/模块生命周期.md
-- 配置监听：docs/实现/配置监听.md
-- 公共数组：docs/实现/公共数组.md
-- 日志体系：docs/实现/日志体系.md
-- CLI 协议：docs/实现/CLI协议.md
-- 失败处理与守护：docs/实现/失败处理.md
-- 已知问题：docs/实现/已知问题.md
-- 验证方法：docs/实现/验证方法.md
+- 事件派发与比对索引：docs/zh/实现/事件派发.md
+- 模块生命周期：docs/zh/实现/模块生命周期.md
+- 配置监听：docs/zh/实现/配置监听.md
+- 公共数组：docs/zh/实现/公共数组.md
+- 日志体系：docs/zh/实现/日志体系.md
+- CLI 协议：docs/zh/实现/CLI协议.md
+- 失败处理与守护：docs/zh/实现/失败处理.md
+- 已知问题：docs/zh/实现/已知问题.md
+- 验证方法：docs/zh/实现/验证方法.md
