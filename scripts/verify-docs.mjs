@@ -10,7 +10,7 @@ const FACTS = [
   { fact: '日志轮转 128KB', doc: ['docs/使用/日志与命令行.md', '128KB'], src: ['src/core/EventStreamLog.ts', 'ROTATE_SIZE_LIMIT_BYTES = 128'] },
   { fact: '展示截断 2048 字符', doc: ['docs/实现/日志体系.md', '2048'], src: ['src/core/logFormat.ts', 'DISPLAY_TRUNCATE_CHARS = 2048'] },
   { fact: '15 种日志类型', doc: ['docs/使用/日志与命令行.md', 'module-skip、module-start-timeout'], src: ['src/core/logFormat.ts', "MODULE_RESTART: 'module-restart'"] },
-  { fact: '7 条 CLI 指令', doc: ['docs/使用/日志与命令行.md', '| exit |'], src: ['src/core/CliProtocol.ts', "cmd === 'exit'"] },
+  { fact: 'CLI 指令表含 exit', doc: ['docs/使用/日志与命令行.md', '| exit |'], src: ['src/core/CliProtocol.ts', "cmd === 'exit'"] },
   { fact: '指令通道为定向指令', doc: ['docs/实现/CLI协议.md', "sendTo('core', { cmd, args })"], src: ['src/core/CliProtocol.ts', 'handleDirected'] },
   { fact: '钩子签名两参数', doc: ['docs/使用/模块程序.md', 'onEvent(ctx, event)'], src: ['src/types.ts', 'onEvent?(ctx: ModuleContext, event: CoreEvent)'] },
   { fact: '数组注册表规则', doc: ['docs/实现/公共数组.md', 'removeOwner'], src: ['src/core/ArrayRegistry.ts', 'removeOwner(owner: string)'] },
