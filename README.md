@@ -2,6 +2,8 @@
 
 [English](README.md) | [中文](README.zh.md)
 
+**Version 0.1.0 (pre-release)**
+
 Connect-Core is an event-driven modular framework core running on Node.js, written in TypeScript.
 
 The software consists of a core and modules. The core is responsible for:
