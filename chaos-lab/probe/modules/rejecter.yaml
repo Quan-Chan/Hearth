@@ -1,4 +1,0 @@
-name: rejecter
-file: ./rejecter.cjs
-startEvents:
-  - "core:startup"

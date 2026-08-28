@@ -1,6 +1,0 @@
-name: recluse
-file: ./recluse.cjs
-startEvents:
-  - "never:anything"
-listen:
-  - "also:never*"

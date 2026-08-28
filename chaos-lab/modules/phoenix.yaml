@@ -1,8 +1,0 @@
-name: phoenix
-file: ./phoenix.cjs
-startEvents:
-  - "core:startup"
-  - "tick"
-enabled: true
-config:
-  generation: 175

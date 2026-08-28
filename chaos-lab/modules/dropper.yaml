@@ -1,6 +1,0 @@
-name: dropper
-file: ./dropper.cjs
-startEvents:
-  - "core:startup"
-listen:
-  - "tick"

@@ -1,6 +1,0 @@
-name: c-worker
-file: ./c-worker.cjs
-startEvents:
-  - "core:startup"
-listen:
-  - "job"

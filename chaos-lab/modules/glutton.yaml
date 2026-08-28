@@ -1,4 +1,0 @@
-name: glutton
-file: ./glutton.cjs
-startEvents:
-  - "core:startup"

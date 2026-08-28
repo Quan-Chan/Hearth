@@ -1,4 +1,0 @@
-name: missing-49
-file: ./no-such-49.cjs
-startEvents:
-  - "tick"

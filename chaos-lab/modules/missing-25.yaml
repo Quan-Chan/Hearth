@@ -1,4 +1,0 @@
-name: missing-25
-file: ./no-such-25.cjs
-startEvents:
-  - "tick"

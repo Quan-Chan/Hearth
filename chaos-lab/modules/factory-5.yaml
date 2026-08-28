@@ -1,4 +1,0 @@
-name: factory-5
-file: ../assets/boom-factory.cjs
-startEvents:
-  - "tick"

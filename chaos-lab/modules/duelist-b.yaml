@@ -1,6 +1,0 @@
-name: duelist-b
-file: ./duelist-b.cjs
-startEvents:
-  - "core:startup"
-listen:
-  - "tick"

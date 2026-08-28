@@ -1,4 +1,0 @@
-name: pulse
-file: ./pulse.cjs
-startEvents:
-  - "core:startup"

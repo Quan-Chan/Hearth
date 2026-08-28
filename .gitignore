@@ -7,4 +7,3 @@ work/
 .test-build/
 .npm-cache/
 .dsh/
-chaos-lab/last-run-report.json

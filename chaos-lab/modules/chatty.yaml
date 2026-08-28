@@ -1,4 +1,0 @@
-name: chatty
-file: ./chatty.cjs
-startEvents:
-  - "core:startup"

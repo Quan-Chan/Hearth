@@ -1,6 +1,0 @@
-name: clock
-file: ./clock.cjs
-startEvents:
-  - "core:startup"
-config:
-  intervalMs: 266

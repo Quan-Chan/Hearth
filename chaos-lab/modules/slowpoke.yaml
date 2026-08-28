@@ -1,6 +1,0 @@
-name: slowpoke
-file: ./slowpoke.cjs
-startEvents:
-  - "core:startup"
-listen:
-  - "tick"

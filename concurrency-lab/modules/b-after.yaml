@@ -1,6 +1,0 @@
-name: b-after
-file: ./b-after.cjs
-startEvents:
-  - "core:startup"
-listen:
-  - "request"

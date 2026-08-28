@@ -1,6 +1,0 @@
-name: ping-b
-file: ./ping-b.cjs
-startEvents:
-  - "core:startup"
-listen:
-  - "loop:b"
