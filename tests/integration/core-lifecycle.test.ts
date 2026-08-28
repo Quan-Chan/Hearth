@@ -110,7 +110,7 @@ test('事件路由：精确匹配 + 通配符匹配，非监听者不收', async
     await core.sendEvent('chat:message', { text: 'hi' }, 'tester');
     assert.deepEqual(arr(core as any, 'public:boot:marks'), ['started', 'tester:chat:message']);
     // badhandler 也监听 chat:message：它抛错，但日志记录且不影响其他模块
-    assert.equal(core.log.byType('error').filter((e) => String(e.message).includes('处理事件')).length, 1);
+    assert.equal(core.log.byType('error').filter((e) => String(e.message).includes('failed to handle event')).length, 1);
     // wild 通配符收不到 chat:message
     assert.deepEqual(arr(core as any, 'public:wild:marks'), []);
     await core.sendEvent('wild:ping');
@@ -138,15 +138,15 @@ test('框架核心方法：startModule / stopModule / sendEvent', async () => {
     await core.startModule('boot', 'manual');
     assert.equal(core.getModule('boot')!.status, 'running');
     // 未知模块抛错
-    await assert.rejects(() => core.startModule('ghost'), /未知模块/);
-    await assert.rejects(() => core.stopModule('ghost'), /未知模块/);
+    await assert.rejects(() => core.startModule('ghost'), /unknown module/);
+    await assert.rejects(() => core.stopModule('ghost'), /unknown module/);
     // 重复启动/停止不报错，仅记录跳过
     await core.startModule('boot');
     assert.equal(core.log.byType('module-skip').filter((s) => s.reason === 'already-running').length, 1);
     await core.stopModule('lazy'); // 未运行
     assert.equal(core.log.byType('module-skip').filter((s) => s.reason === 'not-running').length, 1);
     // sendEvent 事件名校验
-    await assert.rejects(() => core.sendEvent(''), /非空字符串/);
+    await assert.rejects(() => core.sendEvent(''), /non-empty string/);
     await core.stop();
   } finally {
     rmDir(dir);
@@ -161,13 +161,13 @@ test('模块失败隔离：启动失败/事件处理失败不影响核心与其�
     await core.start();
     assert.equal(core.getModule('boom')!.status, 'failed');
     // 失败原因在日志（error 类型，含"启动失败"），状态不重复保存
-    assert.equal(core.log.byType('error').filter((e) => String(e.message).includes('启动失败')).length, 1);
+    assert.equal(core.log.byType('error').filter((e) => String(e.message).includes('start failed')).length, 1);
     // 核心仍然工作
     await core.sendEvent('wild:ok');
     assert.deepEqual(arr(core as any, 'public:wild:marks'), ['external:wild:ok']);
     // badhandler 抛错被记录，boot 仍收到事件
     await core.sendEvent('chat:message', { text: 'x' });
-    assert.equal(core.log.byType('error').filter((e) => String(e.message).includes('处理事件')).length, 1);
+    assert.equal(core.log.byType('error').filter((e) => String(e.message).includes('failed to handle event')).length, 1);
     assert.deepEqual(arr(core as any, 'public:boot:marks'), ['started', 'external:chat:message']);
     await core.stop();
   } finally {
@@ -190,7 +190,7 @@ test('关闭：全部模块返回"已关闭"后核心关闭，之后不能再发
     assert.equal(core.log.byType('core-stop').length, 1);
     assert.equal(core.started, false);
     // 停止后不能发送事件
-    await assert.rejects(() => core.sendEvent('x'), /未启动/);
+    await assert.rejects(() => core.sendEvent('x'), /not started/);
   } finally {
     rmDir(dir);
   }
@@ -223,7 +223,7 @@ test('重复启动抛错', async () => {
     makeFixtures(dir);
     const core = makeCore(dir);
     await core.start();
-    await assert.rejects(() => core.start(), /已经启动/);
+    await assert.rejects(() => core.start(), /already started/);
     await core.stop();
   } finally {
     rmDir(dir);

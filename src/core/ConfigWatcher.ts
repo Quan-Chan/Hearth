@@ -218,17 +218,17 @@ export function parseModuleConfig(text: string, baseDir: string): ModuleConfig {
   try {
     raw = parseYaml(text);
   } catch (err) {
-    throw new Error(`YAML 解析失败: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`YAML parse failed: ${err instanceof Error ? err.message : String(err)}`);
   }
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    throw new Error('YAML 顶层必须是映射对象');
+    throw new Error('YAML top level must be a mapping object');
   }
   const obj = raw as Record<string, unknown>;
   const name = obj.name;
-  if (typeof name !== 'string' || name.length === 0) throw new Error('缺少 name（模块名）');
+  if (typeof name !== 'string' || name.length === 0) throw new Error('missing name (module name)');
   const file = obj.file;
   if (typeof file !== 'string' || file.length === 0) {
-    throw new Error(`模块 ${name} 缺少 file（模块程序路径）`);
+    throw new Error(`module ${name} missing file (module program path)`);
   }
   const cfg: ModuleConfig = {
     name,
@@ -244,7 +244,7 @@ export function parseModuleConfig(text: string, baseDir: string): ModuleConfig {
   const rawTimeout = obj.startTimeoutMs;
   if (rawTimeout !== undefined && rawTimeout !== null) {
     if (typeof rawTimeout !== 'number' || !Number.isFinite(rawTimeout) || rawTimeout <= 0) {
-      throw new Error(`模块 ${name} 的 startTimeoutMs 必须是正数（毫秒）`);
+      throw new Error(`module ${name} startTimeoutMs must be a positive number (ms)`);
     }
     cfg.startTimeoutMs = rawTimeout;
   }

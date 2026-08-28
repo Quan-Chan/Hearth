@@ -21,14 +21,14 @@ function runInWorker(guardOn: boolean, dir: string): Promise<{ hasRejection: boo
       const fs = require('fs');
       const path = require('path');
       const dir = workerData.dir;
-      fs.writeFileSync(path.join(dir, 'bad.cjs'), 'module.exports = { start() { setTimeout(() => { Promise.reject(new Error("私下异步失败")); }, 30); setTimeout(() => { throw new Error("私下同步异常"); }, 60); } };');
+      fs.writeFileSync(path.join(dir, 'bad.cjs'), 'module.exports = { start() { setTimeout(() => { Promise.reject(new Error("private async failure")); }, 30); setTimeout(() => { throw new Error("private sync exception"); }, 60); } };');
       fs.writeFileSync(path.join(dir, 'bad.yaml'), 'name: bad\\nfile: ./bad.cjs\\nstartEvents: ["core:startup"]\\n');
       const core = new ConnectCore({ moduleDir: dir, watch: false, guardProcess: ${guardOn}, logFile: path.join(dir, 'app.log') });
       core.start().then(() => {
         setTimeout(() => {
           const errs = core.log.byType('error');
-          const hasRejection = errs.some(e => String(e.message).includes('未处理的异步失败'));
-          const hasException = errs.some(e => String(e.message).includes('未捕获异常'));
+          const hasRejection = errs.some(e => String(e.message).includes('caught unhandled async failure'));
+          const hasException = errs.some(e => String(e.message).includes('caught uncaught exception'));
           parentPort.postMessage({ hasRejection, hasException, errCount: errs.length });
         }, 300);
       });

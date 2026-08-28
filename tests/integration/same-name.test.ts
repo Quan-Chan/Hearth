@@ -51,7 +51,7 @@ test('同名模块：第二个文件被拒绝注册，先注册者保留，拒�
     await core.sendEvent('same:ping');
     assert.deepEqual(arr(core as any, 'public:identity:owner'), ['a', 'a-ping']);
     const errs = core.log.byType('error');
-    assert.ok(errs.some((e) => String(e.message).includes('同名')));
+    assert.ok(errs.some((e) => String(e.message).includes('duplicate module names')));
     await core.stop();
   } finally {
     rmDir(dir);

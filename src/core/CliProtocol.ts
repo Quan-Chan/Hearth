@@ -23,28 +23,28 @@ export class CliProtocol {
     // 生成一个自定义事件（来源沿用请求方；事件名为两段式，来源段由核心拼装）
     event: async (args, result, source) => {
       const name = String(args.name ?? '');
-      if (!name) throw new Error('event 指令缺少 name');
+      if (!name) throw new Error('event command missing name');
       await this.core.sendEvent(name, args.data, source);
       result.result = { delivered: source + ':' + name };
     },
     // 开启模块（即使没有事件触发）
     start: async (args, result) => {
       const name = String(args.module ?? '');
-      if (!name) throw new Error('start 指令缺少 module');
+      if (!name) throw new Error('start command missing module');
       await this.core.startModule(name, 'cli');
       result.result = { module: name, status: this.core.getModule(name)?.status };
     },
     // 关闭模块（其公开数组随之消失）
     stop: async (args, result) => {
       const name = String(args.module ?? '');
-      if (!name) throw new Error('stop 指令缺少 module');
+      if (!name) throw new Error('stop command missing module');
       await this.core.stopModule(name);
       result.result = { module: name, status: this.core.getModule(name)?.status };
     },
     // 定向发送：目标无需声明 listen；targets 缺失/'*' = 广播给所有运行中且有 onEvent 的模块
     send: async (args, result, source) => {
       const name = String(args.name ?? '');
-      if (!name) throw new Error('send 指令缺少 name');
+      if (!name) throw new Error('send command missing name');
       const targets =
         args.targets === undefined || args.targets === null || args.targets === '*'
           ? null
@@ -80,7 +80,7 @@ export class CliProtocol {
     const cmd = String(data.cmd ?? '');
     const args = (data.args ?? {}) as Record<string, unknown>;
     const from = message.source;
-    this.core.writeLog(LOG_TYPES.CLI_COMMAND, from, 'CLI 指令: ' + cmd, { command: cmd });
+    this.core.writeLog(LOG_TYPES.CLI_COMMAND, from, 'CLI command: ' + cmd, { command: cmd });
 
     // 结束指令：先把完成信息直接回传发起方，再停核心（先交付结果再关闭）
     if (cmd === 'exit' || cmd === 'quit') {
@@ -92,13 +92,13 @@ export class CliProtocol {
     const result: Record<string, unknown> = { cmd };
     try {
       const handler = this.handlers[cmd];
-      if (!handler) throw new Error('未知 CLI 指令: ' + cmd);
+      if (!handler) throw new Error('unknown CLI command: ' + cmd);
       await handler(args, result, from);
       result.ok = true;
     } catch (err) {
       result.ok = false;
       result.error = err instanceof Error ? err.message : String(err);
-      this.core.writeLog(LOG_TYPES.ERROR, 'core', 'CLI 指令执行失败: ' + (err instanceof Error ? err.message : String(err)), {
+      this.core.writeLog(LOG_TYPES.ERROR, 'core', 'CLI command failed: ' + (err instanceof Error ? err.message : String(err)), {
         command: cmd,
       });
     }

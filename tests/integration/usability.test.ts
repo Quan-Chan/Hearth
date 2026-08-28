@@ -112,7 +112,7 @@ test('模块可用方法全景：ctx 8 个方法端到端可用', async () => {
     const entry = arr(core as any, 'public:apiuser:marks')[0] as any;
     assert.equal(entry.config.config.threshold, 42); // ctx.config = ModuleConfig，嵌套配置在 ctx.config.config（README §3.1 契约）
     // unexposeArray 生效
-    assert.throws(() => (core.array as any)('public:apiuser:scratch'), /不存在/);
+    assert.throws(() => (core.array as any)('public:apiuser:scratch'), /not found/);
     // sendEvent 链式转发到 sink 模块
     assert.equal(arr(core as any, 'public:sink:got').length, 1);
     assert.equal((arr(core as any, 'public:sink:got')[0] as any).name, 'apiuser:api:done');

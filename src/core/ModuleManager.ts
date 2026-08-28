@@ -37,11 +37,11 @@ function isManualishStart(reason?: string): boolean {
 
 /** 模块启动原因 -> 描述（用于 module-start 日志的 message）。 */
 function describeStartReason(reason?: string): string {
-  if (!reason || reason === 'manual') return '手动启动';
-  if (reason === 'config-load') return '配置加载，启动事件已发生';
-  if (reason === 'config-update') return '配置更新，重新启动';
-  if (reason === 'restart') return '模块请求重启';
-  return `事件 ${reason} 匹配启动条件`;
+  if (!reason || reason === 'manual') return 'manual start';
+  if (reason === 'config-load') return 'config loaded, start event already fired';
+  if (reason === 'config-update') return 'config updated, restarting';
+  if (reason === 'restart') return 'module requested restart';
+  return `event ${reason} matched start condition`;
 }
 
 export class ModuleManager {
@@ -79,21 +79,21 @@ export class ModuleManager {
    *  返回是否完成替换。 */
   async reloadModule(name: string): Promise<boolean> {
     const slot = this.modules.get(name);
-    if (!slot) throw new Error(`未知模块: ${name}`);
-    if (!this.core.started) throw new Error('核心未启动，不能重启模块');
+    if (!slot) throw new Error(`unknown module: ${name}`);
+    if (!this.core.started) throw new Error('core not started, cannot reload module');
     if (this.core.stopping) {
-      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '核心正在关闭，跳过重启', { module: name, reason: 'core-stopping' });
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'core is stopping, skip reload', { module: name, reason: 'core-stopping' });
       return false;
     }
     if (slot.inflightStart) {
-      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块启动/重启进行中，跳过重启', {
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'module start/reload in progress, skip reload', {
         module: name,
         reason: 'restart-in-progress',
       });
       return false;
     }
     if (!slot.config.enabled) {
-      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块被禁用，跳过重启', { module: name, reason: 'disabled' });
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'module disabled, skip reload', { module: name, reason: 'disabled' });
       return false;
     }
     // ① 先验证新代码：加载失败则保留旧实例继续运行（替换不会中途出错）
@@ -102,13 +102,13 @@ export class ModuleManager {
       def = await loadModuleProgram(slot.config.file);
     } catch (err) {
       const em = err instanceof Error ? err.message : String(err);
-      this.core.writeLog(LOG_TYPES.ERROR, name, `重启失败: 新代码加载出错，保留旧实例继续运行: ${em}`, {
+      this.core.writeLog(LOG_TYPES.ERROR, name, `reload failed: new code load error, old instance keeps running: ${em}`, {
         module: name,
         error: em,
       });
       return false;
     }
-    this.core.writeLog(LOG_TYPES.MODULE_RESTART, name, '模块请求重启：验证通过，停旧启新', {
+    this.core.writeLog(LOG_TYPES.MODULE_RESTART, name, 'module reload: verified, stop old and start new', {
       module: name,
       file: slot.config.file,
     });
@@ -125,36 +125,36 @@ export class ModuleManager {
    *  不提供则每次启动都从磁盘加载（配置更新/事件启动的常规路径）。 */
   private async startModuleCore(name: string, reason: string | undefined, preloadedDef?: ModuleDefinition): Promise<void> {
     const slot = this.modules.get(name);
-    if (!slot) throw new Error(`未知模块: ${name}`);
-    if (!this.core.started) throw new Error('核心未启动，不能启动模块');
+    if (!slot) throw new Error(`unknown module: ${name}`);
+    if (!this.core.started) throw new Error('core not started, cannot start module');
     if (this.core.stopping) {
-      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '核心正在关闭，跳过启动', { module: name, reason: 'core-stopping' });
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'core is stopping, skip start', { module: name, reason: 'core-stopping' });
       return;
     }
     // 幂等：事件密集到达时同模块可能被多次点名，已在跑/正在启动/被禁用的直接跳过。
     if (slot.status === 'running') {
-      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块已在运行，跳过启动', {
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'module already running, skip start', {
         module: name,
         reason: 'already-running',
       });
       return;
     }
     if (slot.inflightStart) {
-      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块启动进行中，跳过重复启动', {
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'module start in progress, skip duplicate start', {
         module: name,
         reason: 'start-in-progress',
       });
       return;
     }
     if (!slot.config.enabled) {
-      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块被禁用，跳过启动', {
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'module disabled, skip start', {
         module: name,
         reason: 'disabled',
       });
       return;
     }
     if (slot.startTimedOut && !isManualishStart(reason)) {
-      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '此前启动超时已放弃自动重试，需手动启动或更新配置解锁', {
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'previous start timed out, auto retry locked; manual start or config update required', {
         module: name,
         reason: 'start-timeout-lock',
       });
@@ -190,7 +190,7 @@ export class ModuleManager {
           slot.startTimedOut = true;
           slot.status = 'failed';
           this.core.writeLog(LOG_TYPES.MODULE_START_TIMEOUT, name,
-            `启动超时：超过 ${timeoutMs}ms 未完成，放弃等待并标记失败（自动重试已锁定）`,
+            `start timed out: not finished within ${timeoutMs}ms, gave up waiting and marked failed (auto retry locked)`,
             { module: name, timeoutMs });
           return;
         }
@@ -214,7 +214,7 @@ export class ModuleManager {
         if (seq !== slot.startSeq) return; // 陈旧尝试，结果作废
         slot.status = 'failed';
         const em = err instanceof Error ? err.message : String(err);
-        this.core.writeLog(LOG_TYPES.ERROR, name, `启动失败: ${em}`, {
+        this.core.writeLog(LOG_TYPES.ERROR, name, `start failed: ${em}`, {
           module: name,
           error: em,
         });
@@ -232,21 +232,21 @@ export class ModuleManager {
    *  配置 enabled:false、以及模块请求重启时的停止环节。） */
   async stopModule(name: string): Promise<void> {
     const slot = this.modules.get(name);
-    if (!slot) throw new Error(`未知模块: ${name}`);
+    if (!slot) throw new Error(`unknown module: ${name}`);
     if (slot.status === 'starting') {
       // 启动尚未完成：作废这次启动（代数+1，陈旧结果不得写回），真正的启动流程稍后自行收尾。
       slot.startSeq++;
       slot.status = 'stopped';
       slot.inflightStart = undefined;
       const cancelled = this.core.removeOwnerArrays(name);
-      this.core.writeLog(LOG_TYPES.MODULE_STOP, name, '启动过程中被取消，模块停止', {
+      this.core.writeLog(LOG_TYPES.MODULE_STOP, name, 'cancelled during start, module stopped', {
         module: name,
         removedArrays: cancelled,
       });
       return;
     }
     if (slot.status !== 'running') {
-      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块未在运行，跳过关闭', {
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'module not running, skip stop', {
         module: name,
         reason: 'not-running',
       });
@@ -255,7 +255,7 @@ export class ModuleManager {
     try {
       await slot.def?.stop?.(slot.ctx!);
     } catch (err) {
-      this.core.writeLog(LOG_TYPES.ERROR, name, `关闭钩子失败: ${err instanceof Error ? err.message : String(err)}`, {
+      this.core.writeLog(LOG_TYPES.ERROR, name, `stop hook failed: ${err instanceof Error ? err.message : String(err)}`, {
         module: name,
         error: err instanceof Error ? err.message : String(err),
       });
@@ -266,7 +266,7 @@ export class ModuleManager {
     this.core.writeLog(
       LOG_TYPES.MODULE_STOP,
       name,
-      removed.length > 0 ? `关闭模块，清理 ${removed.length} 个公共数组` : '关闭模块',
+      removed.length > 0 ? `module stopped, removed ${removed.length} shared arrays` : 'module stopped',
       { module: name, removedArrays: removed },
     );
   }
@@ -287,7 +287,7 @@ export class ModuleManager {
         m.status = 'stopped';
         m.inflightStart = undefined;
         const cancelled = this.core.removeOwnerArrays(m.name);
-        this.core.writeLog(LOG_TYPES.MODULE_STOP, m.name, '启动过程中被取消，模块停止', {
+        this.core.writeLog(LOG_TYPES.MODULE_STOP, m.name, 'cancelled during start, module stopped', {
           module: m.name,
           removedArrays: cancelled,
         });
@@ -297,7 +297,7 @@ export class ModuleManager {
         try {
           await m.def?.stop?.(m.ctx!);
         } catch (err) {
-          this.core.writeLog(LOG_TYPES.ERROR, m.name, `关闭钩子失败: ${err instanceof Error ? err.message : String(err)}`, {
+          this.core.writeLog(LOG_TYPES.ERROR, m.name, `stop hook failed: ${err instanceof Error ? err.message : String(err)}`, {
             module: m.name,
             error: err instanceof Error ? err.message : String(err),
           });
@@ -308,7 +308,7 @@ export class ModuleManager {
         this.core.writeLog(
           LOG_TYPES.MODULE_STOP,
           m.name,
-          removed.length > 0 ? `关闭模块，清理 ${removed.length} 个公共数组` : '关闭模块',
+          removed.length > 0 ? `module stopped, removed ${removed.length} shared arrays` : 'module stopped',
           { module: m.name, removedArrays: removed },
         );
       })();
@@ -326,7 +326,7 @@ export class ModuleManager {
       this.core.writeLog(
         LOG_TYPES.ERROR,
         'core',
-        `停止超时：${this.core.options.stopTimeoutMs}ms 内还有模块未返回"已关闭"，强制关闭` + (pending.length > 0 ? `：${pending.join(', ')}` : ''),
+        `stop timed out: modules did not return "closed" within ${this.core.options.stopTimeoutMs}ms, forcing close` + (pending.length > 0 ? `: ${pending.join(', ')}` : ''),
         { timeoutMs: this.core.options.stopTimeoutMs, pending },
       );
     }

@@ -70,13 +70,13 @@ test('取消公开：仅拥有者可以，取消后他人不可拉取', async ()
     const core = new ConnectCore({ moduleDir: dir, watch: false });
     await core.start();
     // 消费者不能取消别人的数组（消费者名下不存在该数组）
-    assert.throws(() => core.unexposeArray('items', 'consumer'), /不存在/);
+    assert.throws(() => core.unexposeArray('items', 'consumer'), /not found/);
     // 拥有者可以
     core.unexposeArray('items', 'producer');
     assert.deepEqual(arrayNames(core).sort(), ['public:consumer:own', 'public:producer:own']);
-    assert.throws(() => arr(core, 'public:producer:items'), /不存在/);
+    assert.throws(() => arr(core, 'public:producer:items'), /not found/);
     // 同拥有者重复公开自己的数组：抛错（不同拥有者的同名第三段不冲突）
-    assert.throws(() => core.exposeArray('own', 'producer', []), /已存在/);
+    assert.throws(() => core.exposeArray('own', 'producer', []), /already exists/);
     core.exposeArray('extra', 'consumer', []);
     await core.stop();
   } finally {
@@ -94,8 +94,8 @@ test('模块停止：其公开数组自动消失，不留残档；重启后是�
     // 停止 producer -> 它的数组全部消失
     await core.stopModule('producer');
     assert.deepEqual(arrayNames(core).sort(), ['public:consumer:own']);
-    assert.throws(() => arr(core, 'public:producer:items'), /不存在/);
-    assert.throws(() => arr(core, 'public:producer:own'), /不存在/);
+    assert.throws(() => arr(core, 'public:producer:items'), /not found/);
+    assert.throws(() => arr(core, 'public:producer:own'), /not found/);
     assert.ok(core.log.byType('module-stop').some((s) => s.module === 'producer' && Array.isArray(s.removedArrays) && s.removedArrays.length === 2));
     // 重启 producer -> 重新映射全新数组（旧数据不残留）
     await core.startModule('producer', 'manual');
@@ -136,7 +136,7 @@ test('核心直接操作公共数组（原生引用操作，数组操作不记�
     list.push('d', 'e');
     assert.deepEqual(arr(core, 'public:admin:list'), ['z', 'a', 'c', 'd', 'e']);
     // 拉取不存在的数组抛错
-    assert.throws(() => (core.array as any)('public:admin:nope'), /不存在/);
+    assert.throws(() => (core.array as any)('public:admin:nope'), /not found/);
     // 数组操作不产生任何日志（高频编辑不会爆日志）
     const arrayLogs = core.log.all().filter((e) => String(e.type).startsWith('array'));
     assert.equal(arrayLogs.length, 0);

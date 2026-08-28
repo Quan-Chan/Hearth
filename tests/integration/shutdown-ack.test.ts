@@ -56,7 +56,7 @@ test('停止协议：模块超过 stopTimeoutMs 未返回"已关闭" -> 核心�
     const elapsed = Date.now() - t0;
     // 未返回的模块被超时强制关闭：停机仍完成，且记了 error 指明谁没回来
     assert.ok(elapsed >= 280 && elapsed < 2000, '超时后强制关闭（实际 ' + elapsed + 'ms）');
-    assert.ok(core.log.all().some((e) => e.type === 'error' && String(e.message).includes('停止超时') && String(e.message).includes('hang')), 'error 日志指明未返回的模块');
+    assert.ok(core.log.all().some((e) => e.type === 'error' && String(e.message).includes('stop timed out') && String(e.message).includes('hang')), 'error 日志指明未返回的模块');
     assert.equal(core.started, false);
     // 返回了的模块正常关闭
     assert.equal(core.getModule('plain')!.status, 'stopped');
@@ -102,8 +102,8 @@ test('停机进行中：事件与定向消息抛"正在关闭"，配置变更被
     // 等 100ms 进入停机窗口
     await new Promise((r) => setTimeout(r, 100));
     // 事件与定向消息被冻结
-    await assert.rejects(() => core.sendEvent('go'), /正在关闭/);
-    await assert.rejects(() => core.sendTo('slowstop', { x: 1 }), /正在关闭/);
+    await assert.rejects(() => core.sendEvent('go'), /is stopping/);
+    await assert.rejects(() => core.sendTo('slowstop', { x: 1 }), /is stopping/);
     // 配置变更被拒绝：写新 YAML 不会注册（停机中文件面冻结）
     fs.writeFileSync(path.join(dir, 'new.cjs'), 'module.exports = { start() {} };');
     fs.writeFileSync(path.join(dir, 'new.yaml'), yamlFor('new', { startEvents: ['core:startup'] }));

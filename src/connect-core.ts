@@ -37,24 +37,24 @@ async function main(): Promise<void> {
     if (coreCfg.watch !== undefined) options.watch = Boolean(coreCfg.watch);
     if (coreCfg.logToConsole) options.logToConsole = true;
     // eslint-disable-next-line no-console
-    console.log(`[connect-core] 读取配置文件: ${configPath}`);
+    console.log(`[connect-core] loaded config file: ${configPath}`);
   } else {
     // eslint-disable-next-line no-console
-    console.log(`[connect-core] 未找到 ${configPath}，使用默认配置`);
+    console.log(`[connect-core] config file not found: ${configPath}, using defaults`);
   }
 
   const core = await startCore(options);
 
   // eslint-disable-next-line no-console
-  console.log('[connect-core] 核心已启动');
+  console.log('[connect-core] core started');
   // eslint-disable-next-line no-console
-  console.log(`[connect-core] 模块目录: ${core.options.moduleDir}`);
+  console.log(`[connect-core] module dir: ${core.options.moduleDir}`);
   // eslint-disable-next-line no-console
-  console.log(`[connect-core] 核心日志: ${core.options.logFile}`);
+  console.log(`[connect-core] log file: ${core.options.logFile}`);
   // eslint-disable-next-line no-console
   console.log(
-    '[connect-core] 已加载模块: ' +
-      (core.listModules().map((m) => m.name).join(', ') || '(无)'),
+    '[connect-core] loaded modules: ' +
+      (core.listModules().map((m) => m.name).join(', ') || '(none)'),
   );
 
   // 占住事件循环：真正的工作（模块监听 / 事件路由）都挂在核心内部，
@@ -63,7 +63,7 @@ async function main(): Promise<void> {
 
   const shutdown = async (): Promise<void> => {
     // eslint-disable-next-line no-console
-    console.log('[connect-core] 正在关闭...');
+    console.log('[connect-core] shutting down...');
     await core.stop();
     process.exit(0);
   };
@@ -74,6 +74,6 @@ async function main(): Promise<void> {
 // 启动失败也要干净退出并给出可诊断的报错，而不是挂在半初始化的状态。
 main().catch((err: Error) => {
   // eslint-disable-next-line no-console
-  console.error('[connect-core] 启动失败:', err.message);
+  console.error('[connect-core] startup failed:', err.message);
   process.exit(1);
 });

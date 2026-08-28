@@ -30,7 +30,7 @@ test('formatLogEntry：HH:MM:SS.mmm [type] source: message + 附加字段', () =
     data: { text: '世界' },
     recipients: ['echo'],
   } as LogEntry);
-  assert.equal(line, '11:11:55.315 [event] external: echo  [转发=echo  data={"text":"世界"}]');
+  assert.equal(line, '11:11:55.315 [event] external: echo  [recipients=echo  data={"text":"世界"}]');
 });
 
 test('formatLogEntry：event/event-drop 的 message 就是事件名，不重复显示', () => {
@@ -48,10 +48,10 @@ test('formatLogEntry：module-start 显示启动原因', () => {
     t: '2026-08-16T11:11:55.314Z',
     type: 'module-start',
     source: 'greeter',
-    message: '事件 core:startup 匹配启动条件',
+    message: 'event core:startup matched start condition',
     reason: 'core:startup',
   } as LogEntry);
-  assert.equal(line, '11:11:55.314 [module-start] greeter: 事件 core:startup 匹配启动条件  [reason=core:startup]');
+  assert.equal(line, '11:11:55.314 [module-start] greeter: event core:startup matched start condition  [reason=core:startup]');
 });
 
 test('categoryOf：可直接用于过滤（等价于对 JSONL grep）', () => {

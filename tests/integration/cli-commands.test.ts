@@ -82,7 +82,7 @@ test('stop 指令：关闭模块，其数组随之消失', async () => {
     const r = await ask(core, 'stop', { module: 'echo' });
     assert.equal(r.ok, true);
     assert.equal(core.getModule('echo')!.status, 'stopped');
-    assert.throws(() => (core.array as any)('public:echo:out'), /不存在/);
+    assert.throws(() => (core.array as any)('public:echo:out'), /not found/);
     await core.stop();
   } finally { rmDir(dir); }
 });
@@ -139,7 +139,7 @@ test('未知指令：结果 ok:false + error，核心继续可用', async () => 
     await core.start();
     const r = await ask(core, 'frobnicate', {});
     assert.equal(r.ok, false);
-    assert.ok(String(r.error).includes('未知 CLI 指令'));
+    assert.ok(String(r.error).includes('unknown CLI command'));
     await core.sendEvent('ping:ok', {}, 'tester');
     assert.deepEqual(arr(core as any, 'public:listener:got'), ['tester:ping:ok']);
     await core.stop();

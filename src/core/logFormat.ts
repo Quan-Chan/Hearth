@@ -67,7 +67,7 @@ export const DISPLAY_TRUNCATE_CHARS = 2048;
 /** 展示层文本缩短：超长部分以省略号 + 原始长度标注替代，信息本体以落盘文件为准。 */
 export function truncateDisplay(text: string, max: number = DISPLAY_TRUNCATE_CHARS): string {
   if (text.length <= max) return text;
-  return text.slice(0, max) + `…[截断显示，原始 ${text.length} 字符]`;
+  return text.slice(0, max) + `...[truncated, original ${text.length} chars]`;
 }
 
 /** 由 type 得到类别。 */
@@ -85,7 +85,7 @@ export function formatLogEntry(entry: LogEntry): string {
     extra.push('event=' + entry.event);
   }
   if (Array.isArray(entry.recipients) && entry.recipients.length > 0) {
-    extra.push('转发=' + entry.recipients.join(','));
+    extra.push('recipients=' + entry.recipients.join(','));
   }
   if (entry.data !== undefined) {
     // 展示层缩短：文件里存的是完整内容，这里只为显示截断
@@ -101,7 +101,7 @@ export function formatLogEntry(entry: LogEntry): string {
     extra.push('file=' + String(entry.file));
   }
   if (entry.removedArrays !== undefined && Array.isArray(entry.removedArrays) && entry.removedArrays.length > 0) {
-    extra.push('清理数组=' + entry.removedArrays.join(','));
+    extra.push('removedArrays=' + entry.removedArrays.join(','));
   }
   return extra.length > 0 ? line + '  [' + extra.join('  ') + ']' : line;
 }

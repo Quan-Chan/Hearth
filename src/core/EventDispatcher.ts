@@ -45,10 +45,10 @@ export class EventDispatcher {
    *  事件为两段式：事件名 = 来源:事件名，来源段由这里按调用方自动拼装；
    *  调用方（模块 ctx.sendEvent / 核心自产 / 宿主）只负责给事件名段与内容 data。 */
   async sendEvent(name: string, data?: unknown, source: string = 'external'): Promise<void> {
-    if (!this.core.started) throw new Error('Connect-Core 未启动，不能发送事件');
+    if (!this.core.started) throw new Error('Connect-Core not started, cannot send event');
     // 停机期间冻结事件面：外部与模块的事件一律拒绝
     if (this.core.stopping && source !== 'core') {
-      throw new Error('Connect-Core 正在关闭，不能再发送事件');
+      throw new Error('Connect-Core is stopping, cannot send event');
     }
     await this.dispatch(name, data, source);
   }
@@ -56,7 +56,7 @@ export class EventDispatcher {
   /** 事件派发的实际执行体：sendEvent 校验后的内部通道。 */
   private async dispatch(name: string, data?: unknown, source: string = 'external'): Promise<void> {
     if (typeof name !== 'string' || name.length === 0) {
-      throw new Error('事件名必须是非空字符串');
+      throw new Error('event name must be a non-empty string');
     }
     // 两段式事件名：来源段由核心按调用方自动拼装（模块名 / core / external），模块无法伪造
     const fullName = source + ':' + name;
@@ -85,7 +85,7 @@ export class EventDispatcher {
     }
 
     // 3) 向监听模块发送事件消息（单个模块失败不影响其他模块）
-    await this.deliverTo(listeners, event, `处理事件 ${fullName} 失败: `);
+    await this.deliverTo(listeners, event, `failed to handle event ${fullName}: `);
   }
 
   // ==================== 事件派发辅助 ====================
@@ -130,9 +130,9 @@ export class EventDispatcher {
    * 返回实际接收方的模块名（顺序即投递顺序）。单个模块失败被隔离，不影响其他接收方。
    */
   async sendDirected(targets: string[] | null, name: string, data?: unknown, source: string = 'external'): Promise<string[]> {
-    if (!this.core.started) throw new Error('Connect-Core 未启动，不能发送事件');
+    if (!this.core.started) throw new Error('Connect-Core not started, cannot send event');
     if (typeof name !== 'string' || name.length === 0) {
-      throw new Error('事件名必须是非空字符串');
+      throw new Error('event name must be a non-empty string');
     }
     const recipients =
       targets === null
@@ -142,10 +142,10 @@ export class EventDispatcher {
             .filter((m): m is ModuleSlot => !!m && this.isDeliverable(m));
     const fullName = source + ':' + name;
     if (recipients.length === 0) {
-      this.core.writeLog(LOG_TYPES.EVENT_DROP, source, fullName, { event: fullName, data, note: '定向发送: 无有效接收模块' });
+      this.core.writeLog(LOG_TYPES.EVENT_DROP, source, fullName, { event: fullName, data, note: 'directed send: no valid recipients' });
     } else {
       this.core.writeLog(LOG_TYPES.EVENT, source, fullName, { event: fullName, data, recipients: recipients.map((m) => m.name), directed: true });
-      await this.deliverTo(recipients, { name: fullName, data }, '处理定向事件失败: ');
+      await this.deliverTo(recipients, { name: fullName, data }, 'failed to handle directed event: ');
     }
     return recipients.map((m) => m.name);
   }
@@ -160,9 +160,9 @@ export class EventDispatcher {
    * 消息带 source（发送者模块名，自动打、不可伪造）+ 内容 data。返回是否送达。
    */
   async sendTo(target: string, data?: unknown, source: string = 'external'): Promise<boolean> {
-    if (!this.core.started) throw new Error('Connect-Core 未启动，不能发送定向消息');
+    if (!this.core.started) throw new Error('Connect-Core not started, cannot send directed message');
     if (this.core.stopping && source !== 'core') {
-      throw new Error('Connect-Core 正在关闭，不能再发送定向消息');
+      throw new Error('Connect-Core is stopping, cannot send directed message');
     }
     const message: DirectedMessage = { source, data };
 
@@ -180,13 +180,13 @@ export class EventDispatcher {
         return true;
       } catch (err) {
         const em = err instanceof Error ? err.message : String(err);
-        this.core.writeLog(LOG_TYPES.ERROR, target, '处理定向消息失败: ' + em, { target: target, error: em });
+        this.core.writeLog(LOG_TYPES.ERROR, target, 'failed to handle directed message: ' + em, { target: target, error: em });
         // 返回值表示"有没有接收方"：对方处理失败只记 error，接收方存在就算送达。
         return true;
       }
     }
 
-    this.core.writeLog(LOG_TYPES.EVENT_DROP, source, '定向消息未送达', { target: target, data: data, note: '目标不存在、未在运行或未实现 onMessage' });
+    this.core.writeLog(LOG_TYPES.EVENT_DROP, source, 'directed message not delivered', { target: target, data: data, note: 'target missing, not running, or no onMessage' });
     return false;
   }
 }

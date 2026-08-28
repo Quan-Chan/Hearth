@@ -54,10 +54,10 @@ test('加载 ESM (.mjs) 模块', async () => {
 test('文件不存在 / 导出非法 抛错', async () => {
   const dir = mkTmpDir('loader');
   try {
-    await assert.rejects(() => loadModuleProgram(path.join(dir, 'ghost.cjs')), /不存在/);
+    await assert.rejects(() => loadModuleProgram(path.join(dir, 'ghost.cjs')), /not found/);
     const file = path.join(dir, 'bad.cjs');
     fs.writeFileSync(file, 'module.exports = "just a string";\n');
-    await assert.rejects(() => loadModuleProgram(file), /必须是对象或工厂函数/);
+    await assert.rejects(() => loadModuleProgram(file), /must be an object or factory function/);
   } finally {
     rmDir(dir);
   }

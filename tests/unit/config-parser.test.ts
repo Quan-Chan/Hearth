@@ -43,8 +43,8 @@ test('startEvents 可以是单个字符串', () => {
 });
 
 test('非法输入：坏 YAML / 缺 name / 缺 file / 顶层非对象', () => {
-  assert.throws(() => parseModuleConfig('name: [unclosed', BASE), /YAML 解析失败/);
-  assert.throws(() => parseModuleConfig('file: ./a.cjs\n', BASE), /缺少 name/);
-  assert.throws(() => parseModuleConfig('name: a\n', BASE), /缺少 file/);
-  assert.throws(() => parseModuleConfig('- a\n- b\n', BASE), /顶层必须是映射对象/);
+  assert.throws(() => parseModuleConfig('name: [unclosed', BASE), /YAML parse failed/);
+  assert.throws(() => parseModuleConfig('file: ./a.cjs\n', BASE), /missing name/);
+  assert.throws(() => parseModuleConfig('name: a\n', BASE), /missing file/);
+  assert.throws(() => parseModuleConfig('- a\n- b\n', BASE), /top level must be a mapping object/);
 });

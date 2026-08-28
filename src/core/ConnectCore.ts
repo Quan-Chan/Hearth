@@ -116,12 +116,12 @@ export class ConnectCore {
     ConnectCore.processGuardInstalled = true;
     const fmt = (e: unknown): string => (e instanceof Error ? (e.stack ?? e.message) : String(e));
     process.on('unhandledRejection', (reason) => {
-      const text = '捕获未处理的异步失败(Promise): ' + fmt(reason);
+      const text = 'caught unhandled async failure (Promise): ' + fmt(reason);
       if (ConnectCore.guardedCores.size === 0) console.error('[connect-core] ' + text);
       for (const core of ConnectCore.guardedCores) core.writeLog(LOG_TYPES.ERROR, 'core', text);
     });
     process.on('uncaughtException', (err) => {
-      const text = '捕获未捕获异常(进程继续运行): ' + fmt(err);
+      const text = 'caught uncaught exception (process continues): ' + fmt(err);
       if (ConnectCore.guardedCores.size === 0) console.error('[connect-core] ' + text);
       for (const core of ConnectCore.guardedCores) core.writeLog(LOG_TYPES.ERROR, 'core', text);
     });
@@ -130,13 +130,13 @@ export class ConnectCore {
   // ==================== 生命周期：启动核心 == 启动整个软件 ====================
 
   async start(): Promise<void> {
-    if (this.startedFlag) throw new Error('Connect-Core 已经启动，请勿重复启动');
+    if (this.startedFlag) throw new Error('Connect-Core already started, do not start twice');
     this.startedFlag = true;
     if (this.options.guardProcess) {
       ConnectCore.guardedCores.add(this);
       ConnectCore.installProcessGuard();
     }
-    this.writeLog(LOG_TYPES.CORE_START, 'core', '核心启动');
+    this.writeLog(LOG_TYPES.CORE_START, 'core', 'core started');
 
     // 坏 YAML 只记 error、核心继续运行。
     this.watcher = new ConfigWatcher({
@@ -148,7 +148,7 @@ export class ConnectCore {
         onUpdate: (cfg, yamlPath) => this.handleConfigUpdate(cfg, yamlPath),
         onRemove: (name) => this.handleConfigRemove(name),
         onError: (name, message) =>
-          this.writeLog(LOG_TYPES.ERROR, name, `配置解析失败: ${message}`, {
+          this.writeLog(LOG_TYPES.ERROR, name, `config parse failed: ${message}`, {
             module: name,
             error: message,
           }),
@@ -176,7 +176,7 @@ export class ConnectCore {
     this.arrays.removeOwner('core');
     this.startedFlag = false;
     this.stoppingFlag = false;
-    this.writeLog(LOG_TYPES.CORE_STOP, 'core', '核心关闭');
+    this.writeLog(LOG_TYPES.CORE_STOP, 'core', 'core stopped');
     await this.log.close();
   }
 
@@ -242,13 +242,13 @@ export class ConnectCore {
     if (!this.manager.register(cfg, yamlPath)) {
       const existing = this.manager.getSlot(cfg.name)!;
       this.writeLog(LOG_TYPES.ERROR, cfg.name,
-        `配置加载被拒绝：模块名 ${cfg.name} 已被 ${existing.yamlPath} 注册（同名模块不允许安装）`,
+        `config load rejected: module name ${cfg.name} already registered by ${existing.yamlPath} (duplicate module names not allowed)`,
         { module: cfg.name, file: cfg.file, conflict: existing.yamlPath },
       );
       return false;
     }
     this.dispatcher.rebuildIndexes(this.manager.slots());
-    this.writeLog(LOG_TYPES.CONFIG_LOAD, cfg.name, `加载配置 ${cfg.name}`, {
+    this.writeLog(LOG_TYPES.CONFIG_LOAD, cfg.name, `config loaded: ${cfg.name}`, {
       module: cfg.name,
       file: cfg.file,
     });
@@ -270,7 +270,7 @@ export class ConnectCore {
     // 同名不同文件：本文件不是该模块名当前归属的 YAML，拒绝应用（模块名全库不允许重复，先注册者保留）
     if (prev && prev.yamlPath !== yamlPath) {
       this.writeLog(LOG_TYPES.ERROR, cfg.name,
-        `配置更新被拒绝：模块名 ${cfg.name} 已被 ${prev.yamlPath} 占用（同名模块不允许安装）`,
+        `config update rejected: module name ${cfg.name} occupied by ${prev.yamlPath} (duplicate module names not allowed)`,
         { module: cfg.name, file: cfg.file, conflict: prev.yamlPath },
       );
       return false;
@@ -278,7 +278,7 @@ export class ConnectCore {
     const wasRunning = prev?.status === 'running';
     await this.manager.applyUpdate(cfg, yamlPath);
     this.dispatcher.rebuildIndexes(this.manager.slots());
-    this.writeLog(LOG_TYPES.CONFIG_UPDATE, cfg.name, `更新配置 ${cfg.name}（YAML 层生效，模块实例与代码不动）`, {
+    this.writeLog(LOG_TYPES.CONFIG_UPDATE, cfg.name, `config updated: ${cfg.name} (YAML layer only, module instance and code unchanged)`, {
       module: cfg.name,
       file: cfg.file,
     });
@@ -294,7 +294,7 @@ export class ConnectCore {
     if (!this.manager.getSlot(name)) return;
     await this.manager.remove(name);
     this.dispatcher.rebuildIndexes(this.manager.slots());
-    this.writeLog(LOG_TYPES.CONFIG_REMOVE, name, `移除配置 ${name}`, { module: name });
+    this.writeLog(LOG_TYPES.CONFIG_REMOVE, name, `config removed: ${name}`, { module: name });
   }
 
   // ==================== 公共数组（映射关系） ====================

@@ -11,7 +11,7 @@ import type { ModuleDefinition } from '../types';
 
 export async function loadModuleProgram(filePath: string): Promise<ModuleDefinition> {
   const abs = path.resolve(filePath);
-  if (!fs.existsSync(abs)) throw new Error(`模块程序文件不存在: ${abs}`);
+  if (!fs.existsSync(abs)) throw new Error(`module program file not found: ${abs}`);
   const ext = path.extname(abs).toLowerCase();
   let loaded: unknown;
   if (ext === '.mjs' || ext === '.ts') {
@@ -33,7 +33,7 @@ export async function loadModuleProgram(filePath: string): Promise<ModuleDefinit
     def = await (def as () => unknown)();
   }
   if (typeof def !== 'object' || def === null) {
-    throw new Error(`模块程序导出必须是对象或工厂函数: ${abs}`);
+    throw new Error(`module program export must be an object or factory function: ${abs}`);
   }
   return def as ModuleDefinition;
 }

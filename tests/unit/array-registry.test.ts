@@ -14,8 +14,8 @@ test('数组名拼装：public:模块名:数组名', () => {
 
 test('expose 输入校验：空名、非数组内容抛错', () => {
   const r = new ArrayRegistry();
-  assert.throws(() => r.expose('', 'mod-b'), /非空字符串/);
-  assert.throws(() => r.expose('x', 'mod-b', 'not-array' as any), /必须是数组/);
+  assert.throws(() => r.expose('', 'mod-b'), /non-empty string/);
+  assert.throws(() => r.expose('x', 'mod-b', 'not-array' as any), /must be an array/);
   // 不同拥有者的同名第三段不冲突
   r.expose('items', 'mod-a', []);
   r.expose('items', 'mod-c', []);

@@ -103,7 +103,7 @@ test('reloadModule：新代码加载失败则保留旧实例继续运行（验�
 
     // error 日志可查（类型 error，含"重启失败"）
     const errs = core.log.byType('error');
-    assert.ok(errs.some((e) => String(e.message).includes('重启失败')), '有重启失败日志');
+    assert.ok(errs.some((e) => String(e.message).includes('reload failed')), '有重启失败日志');
     await core.stop();
   } finally {
     rmDir(dir);

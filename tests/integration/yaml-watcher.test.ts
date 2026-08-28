@@ -117,7 +117,7 @@ test('非法 YAML：记录 config:error，核心继续运行', async () => {
     const core = new ConnectCore({ moduleDir: dir, watch: true, pollIntervalMs: 50 });
     await core.start();
     fs.writeFileSync(path.join(dir, 'bad.yaml'), 'name: [unclosed\n');
-    await waitFor(() => core.log.byType('error').filter((e) => String(e.message).includes('配置解析失败')).length >= 1);
+    await waitFor(() => core.log.byType('error').filter((e) => String(e.message).includes('config parse failed')).length >= 1);
     assert.equal(core.listModules().length, 0);
     // 核心仍然可发事件
     await core.sendEvent('anything:go');

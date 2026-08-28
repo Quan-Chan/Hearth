@@ -31,16 +31,16 @@ function fmt(e) {
   let line = t + ' [' + e.type + '] ' + e.source + ': ' + e.message;
   const extra = [];
   if (e.event !== undefined && e.type !== 'event' && e.type !== 'event-drop') extra.push('event=' + e.event);
-  if (Array.isArray(e.recipients) && e.recipients.length) extra.push('转发=' + e.recipients.join(','));
+  if (Array.isArray(e.recipients) && e.recipients.length) extra.push('recipients=' + e.recipients.join(','));
   if (e.data !== undefined) {
     // 展示层缩短：文件里是完整内容，终端上只为可读性截断（与核心 formatLogEntry 同规则）
     let s = JSON.stringify(e.data);
-    if (s.length > 2048) s = s.slice(0, 2048) + '…[截断显示，原始 ' + s.length + ' 字符]';
+    if (s.length > 2048) s = s.slice(0, 2048) + '...[truncated, original ' + s.length + ' chars]';
     extra.push('data=' + s);
   }
   if (e.reason !== undefined) extra.push('reason=' + e.reason);
   if (e.error !== undefined) extra.push('error=' + String(e.error));
-  if (Array.isArray(e.removedArrays) && e.removedArrays.length) extra.push('清理数组=' + e.removedArrays.join(','));
+  if (Array.isArray(e.removedArrays) && e.removedArrays.length) extra.push('removedArrays=' + e.removedArrays.join(','));
   return extra.length ? line + '  [' + extra.join('  ') + ']' : line;
 }
 
@@ -67,7 +67,7 @@ function showLog(ctx, pattern, count) {
     const baseFile = logFileOf(ctx);
     const files = logFilesOf(baseFile);
     if (!files.length) {
-      console.log('日志文件不存在: ' + baseFile);
+      console.log('log file not found: ' + baseFile);
     } else {
       const lines = [];
       for (const f of files) {
@@ -79,7 +79,7 @@ function showLog(ctx, pattern, count) {
       }
       const tail = count > 0 ? entries.slice(-count) : entries;
       for (const e of tail) console.log(fmt(e));
-      console.log('(时间线共 ' + entries.length + ' 条匹配' + (count > 0 ? '，显示最后 ' + tail.length + ' 条' : '') + ')');
+      console.log('(' + entries.length + ' matched' + (count > 0 ? ', showing last ' + tail.length : '') + ')');
     }
     if (rl) rl.prompt(); // 异步读文件的输出打完后重新出示提示符
   }, 30);
@@ -87,14 +87,14 @@ function showLog(ctx, pattern, count) {
 
 function helpText() {
   return [
-    '可用指令:',
-    '  event <名称> [JSON]          生成一个自定义事件',
-    '  start <模块>                 开启模块（即使没有事件）',
-    '  stop <模块>                  关闭模块',
-    '  send <目标|*> <名称> [JSON]  定向发送事件（目标=模块名，逗号分隔；* 广播）',
-    '  state                        查看模块与公共数组',
-    '  log [过滤词] [条数]          查看日志时间线（读文件 grep）',
-    '  print                        输出测试文本',
+    'available commands:',
+    '  event <name> [JSON]          generate a custom event',
+    '  start <module>               start a module (even without an event)',
+    '  stop <module>                stop a module',
+    '  send <target|*> <name> [JSON]  send event directly (target=module name, comma separated; * broadcast)',
+    '  state                        list modules and shared arrays',
+    '  log [filter] [count]         view log timeline (grep log files)',
+    '  print                        print test text',
     '  help / exit / quit',
   ].join('\n');
 }
@@ -106,40 +106,40 @@ function run(ctx, line) {
   switch (cmd) {
     case 'event': {
       const name = parts[1];
-      if (!name) return console.log('用法: event <名称> [JSON]');
+      if (!name) return console.log('usage: event <name> [JSON]');
       ask(ctx, 'event', { name, data: parseArg(parts[2]) });
-      console.log('→ 已提交 event ' + name);
+      console.log('-> submitted event ' + name);
       break;
     }
     case 'start': {
       const name = parts[1];
-      if (!name) return console.log('用法: start <模块>');
+      if (!name) return console.log('usage: start <module>');
       ask(ctx, 'start', { module: name });
-      console.log('→ 已提交 start ' + name);
+      console.log('-> submitted start ' + name);
       break;
     }
     case 'stop': {
       const name = parts[1];
-      if (!name) return console.log('用法: stop <模块>');
+      if (!name) return console.log('usage: stop <module>');
       ask(ctx, 'stop', { module: name });
-      console.log('→ 已提交 stop ' + name);
+      console.log('-> submitted stop ' + name);
       break;
     }
     case 'send': {
       const targets = parts[1];
       const name = parts[2];
-      if (!targets || !name) return console.log('用法: send <目标|*> <名称> [JSON]');
+      if (!targets || !name) return console.log('usage: send <target|*> <name> [JSON]');
       ask(ctx, 'send', {
         targets: targets === '*' ? '*' : targets.split(',').map((s) => s.trim()).filter(Boolean),
         name,
         data: parseArg(parts[3]),
       });
-      console.log('→ 已提交 send ' + name + ' -> ' + targets);
+      console.log('-> submitted send ' + name + ' -> ' + targets);
       break;
     }
     case 'state':
       ask(ctx, 'state', {});
-      console.log('→ 已提交 state');
+      console.log('-> submitted state');
       break;
     case 'log':
       showLog(ctx, parts[1] || null, parts[2] ? parseInt(parts[2], 10) : 0);
@@ -152,11 +152,11 @@ function run(ctx, line) {
       break;
     case 'exit':
     case 'quit':
-      console.log('正在关闭核心...');
+      console.log('shutting down core...');
       ask(ctx, 'exit', {});
       break;
     default:
-      console.log('未知指令: ' + cmd + ' （输入 help 查看帮助）');
+      console.log('unknown command: ' + cmd + ' (type help for help)');
   }
 }
 
@@ -179,27 +179,27 @@ module.exports = {
     const r = (message && message.data) || {};
     if (!r.cmd) return;
     if (!r.ok) {
-      console.log('✖ ' + (r.error || '执行失败'));
+      console.log('x ' + (r.error || 'command failed'));
     } else if (r.cmd === 'state') {
       const s = r.result || {};
       const modules = s.modules || [];
       const arrays = s.arrays || [];
-      console.log('--- 核心状态 ---');
+      console.log('--- core state ---');
       for (const m of modules) {
-        console.log('  模块 ' + m.name + '  [' + m.status + ']' + (m.error ? '  error=' + m.error : ''));
+        console.log('  module ' + m.name + '  [' + m.status + ']' + (m.error ? '  error=' + m.error : ''));
       }
       if (!arrays.length) {
-        console.log('  (无公共数组)');
+        console.log('  (no shared arrays)');
       } else {
         for (const name of arrays) {
           let items;
           try {
             const arr = ctx.array(name);
-            items = arr.length > 5 ? JSON.stringify(arr.slice(0, 5)) + ' ... 共 ' + arr.length + ' 项' : JSON.stringify(arr);
+            items = arr.length > 5 ? JSON.stringify(arr.slice(0, 5)) + ' ... total ' + arr.length + ' items' : JSON.stringify(arr);
           } catch (err) {
-            items = '(拉取失败)';
+            items = '(fetch failed)';
           }
-          console.log('  数组 ' + name + ' = ' + items);
+          console.log('  array ' + name + ' = ' + items);
         }
       }
     } else if (r.cmd === 'exit') {

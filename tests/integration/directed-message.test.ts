@@ -141,7 +141,7 @@ test('核心可寻址：sendTo(' + "'" + 'core' + "'" + ', {cmd}) 执行并通�
     await waitFor(() => arr(core as any, 'public:commander:replies').length === 2);
     const bad = arr(core as any, 'public:commander:replies')[1] as any;
     assert.equal(bad.ok, false);
-    assert.ok(String(bad.error).includes('未知 CLI 指令'));
+    assert.ok(String(bad.error).includes('unknown CLI command'));
     await core.stop();
   } finally { rmDir(dir); }
 });
@@ -229,7 +229,7 @@ test('监听者处理抛错被隔离：只记 error，后续监听者仍收到',
     await core.sendEvent('go');
     await waitFor(() => arr(core as any, 'public:ok:order').length === 1);
     // bad 抛错被记 error
-    assert.ok(core.log.byType('error').some((e) => String(e.message).includes('处理事件')));
+    assert.ok(core.log.byType('error').some((e) => String(e.message).includes('failed to handle event')));
     // ok 仍收到
     assert.deepEqual(arr(core as any, 'public:ok:order'), ['ok:external:go']);
     await core.stop();
@@ -248,7 +248,7 @@ test('sendTo 目标存在但 onMessage 抛错：返回 true（存在即送达）
     const delivered = await core.sendTo('thrower', { x: 1 }, 'tester');
     assert.equal(delivered, true);
     // 失败被记录
-    assert.ok(core.log.byType('error').some((e) => String(e.message).includes('处理定向消息失败')));
+    assert.ok(core.log.byType('error').some((e) => String(e.message).includes('failed to handle directed message')));
     // 目标不存在：返回 false
     assert.equal(await core.sendTo('nope', { x: 1 }, 'tester'), false);
     await core.stop();
