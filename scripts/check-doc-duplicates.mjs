@@ -11,7 +11,7 @@ function walk(dir, out) {
     else if (e.name.endsWith('.md')) out.push(p);
   }
 }
-const files = ['README.md', 'README.en.md'];
+const files = ['README.md', 'README.zh.md'];
 walk('docs', files);
 
 // 去掉代码块内容（``` 之间的段落中英版本必然相同，不算重复）
@@ -20,7 +20,7 @@ function stripCodeBlocks(text) {
 }
 
 const norm = (s) => s.replace(/[`#|*]/g, '').replace(/\s/g, '');
-const IGNORE = [norm('[English](README.en.md) | [中文](README.md)')];
+const IGNORE = [norm('[English](README.md) | [中文](README.zh.md)')];
 
 // 分组键：语言+层级。需求与编写要求单独一组（不参与查重）。
 const groupOf = (f) => {

@@ -1,43 +1,43 @@
 # Connect-Core
 
-[English](README.en.md) | [中文](README.md)
+[English](README.md) | [中文](README.zh.md)
 
-Connect-Core 是一个事件驱动的模块化框架核心，运行在 Node.js 上，使用 TypeScript 编写。
+Connect-Core is an event-driven modular framework core running on Node.js, written in TypeScript.
 
-软件由核心与模块组成。核心的职责：
+The software consists of a core and modules. The core is responsible for:
 
-- 启动模块
-- 在模块之间转发事件
-- 提供模块共享数据
+- Starting modules
+- Forwarding events between modules
+- Providing shared data to modules
 
-模块是 YAML 配置与程序文件的组合。YAML 声明模块名、程序文件路径、启动事件与监听事件。
+A module is a combination of a YAML config and a program file. The YAML declares the module name, program file path, start events, and listen events.
 
-模块之间的协作经三条通道完成：
+Modules collaborate through three channels:
 
-- 事件广播：纯字符串信号，携带可选内容
-- 定向消息：直接投递给指定模块
-- 共享数组：公开的数组对象引用，任何模块可读取与修改
+- Event broadcast: pure string signals with optional payload
+- Directed message: delivered directly to a specified module
+- Shared array: references to exposed array objects, readable and modifiable by any module
 
-## 快速开始
+## Quick Start
 
-安装与构建：
+Install and build:
 
 ```bash
 npm install
 npm run build
 ```
 
-命令行启动（读取根目录 connect-core.yaml）：
+Start from the command line (reads `connect-core.yaml` from the root):
 
 ```bash
 npm start
 ```
 
-代码启动与核心选项见使用文档（docs/zh/使用/宿主集成接口.md）。
+For programmatic startup and core options, see the usage docs (`docs/en/usage/host-integration.md`).
 
-核心启动时发出 core:startup 事件，声明监听该事件的模块自动启动。模块文件夹中的 YAML 配置被持续监听，新增、修改、删除即时生效。一个模块由 YAML 与程序文件组成，编写示例见使用文档。
+When the core starts, it emits a `core:startup` event; modules declaring it as a start event start automatically. YAML configs in the module folder are watched continuously; additions, modifications, and removals take effect immediately. A module consists of a YAML and a program file; see the usage docs for examples.
 
-## 文档
+## Documentation
 
-- 使用文档（模块编写与宿主集成）：docs/zh/使用/
-- 实现文档（内部机制与已知问题）：docs/zh/实现/
+- Usage docs (module authoring and host integration): `docs/en/usage/`
+- Implementation docs (internals and known issues): `docs/en/implementation/`
