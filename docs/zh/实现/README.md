@@ -1,5 +1,7 @@
 # 实现文档
 
+[中文](README.md) | [English](../../en/implementation/README.md)
+
 本文档描述 Connect-Core 各项功能是如何实现的，面向维护者。
 
 ## 核心部件
