@@ -120,3 +120,32 @@ test('进程重启后自动续写当天未超限的文件（不覆盖历史）',
     rmDir(dir);
   }
 });
+
+test('内存窗口上限：超出 maxMemoryEntries 丢最旧的，落盘文件不受影响', async () => {
+  const dir = mkTmpDir('mem-window');
+  try {
+    const file = path.join(dir, 'logs', 'event-stream.log');
+    const log = new EventStreamLog({ filePath: file, maxMemoryEntries: 5 });
+    for (let i = 1; i <= 8; i++) {
+      log.record({ type: 'event', source: 'core', message: 'm' + i });
+    }
+    // 内存只保留最近 5 条（m4..m8），最旧的 3 条被淘汰
+    const all = log.all();
+    assert.equal(all.length, 5);
+    assert.deepEqual(all.map((e) => e.message), ['m4', 'm5', 'm6', 'm7', 'm8']);
+    await log.close();
+    // 落盘文件包含全部 8 条（内存淘汰不影响落盘）
+    const lines = log.readFileLines();
+    assert.equal(lines.length, 8);
+  } finally {
+    rmDir(dir);
+  }
+});
+
+test('不配置 maxMemoryEntries：内存不限', () => {
+  const log = new EventStreamLog();
+  for (let i = 1; i <= 100; i++) {
+    log.record({ type: 'event', source: 'core', message: 'm' + i });
+  }
+  assert.equal(log.all().length, 100);
+});
