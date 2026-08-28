@@ -1,8 +1,9 @@
 /**
- * 停止协议：
+ * 停止协议（已知问题 4、5）：
  *  ① 核心调用每个运行模块的 stop() 钩子——stop() 返回（resolve）即该模块"已关闭"；
  *  ② 核心等待全部模块返回"已关闭"：全部返回 → 关闭自己；
- *     超过 stopTimeoutMs 仍有模块未返回 → 强制关闭（记 error 指明谁没回来）。
+ *     超过 stopTimeoutMs 仍有模块未返回 → 强制关闭（记 error 指明谁没回来）；
+ *  ③ 停机进行中：事件/定向消息抛"正在关闭"，配置变更被冻结。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -74,6 +75,43 @@ test('停止协议：同步返回的 stop() 立即视为已关闭（协议不要
     const t0 = Date.now();
     await core.stop();
     assert.ok(Date.now() - t0 < 500, '同步返回快速完成');
+    assert.equal(core.started, false);
+  } finally {
+    rmDir(dir);
+  }
+});
+
+test('停机进行中：事件与定向消息抛"正在关闭"，配置变更被冻结', async () => {
+  const dir = mkTmpDir('freeze');
+  try {
+    // stop 挂起 500ms：制造停机窗口
+    fs.writeFileSync(
+      path.join(dir, 'slowstop.cjs'),
+      `module.exports = {
+  name: 'slowstop',
+  start(ctx) { ctx.exposeArray('m', []); },
+  stop() { return new Promise((r) => setTimeout(r, 500)); },
+};
+`,
+    );
+    fs.writeFileSync(path.join(dir, 'slowstop.yaml'), yamlFor('slowstop', { startEvents: ['core:startup'] }));
+    const core = new ConnectCore({ moduleDir: dir, watch: true, pollIntervalMs: 50, stopTimeoutMs: 5000 });
+    await core.start();
+    // 开始停机但不 await：停机窗口出现（slowstop 的 stop 挂 500ms）
+    const stopPromise = core.stop();
+    // 等 100ms 进入停机窗口
+    await new Promise((r) => setTimeout(r, 100));
+    // 事件与定向消息被冻结
+    await assert.rejects(() => core.sendEvent('go'), /正在关闭/);
+    await assert.rejects(() => core.sendTo('slowstop', { x: 1 }), /正在关闭/);
+    // 配置变更被拒绝：写新 YAML 不会注册（停机中文件面冻结）
+    fs.writeFileSync(path.join(dir, 'new.cjs'), 'module.exports = { start() {} };');
+    fs.writeFileSync(path.join(dir, 'new.yaml'), yamlFor('new', { startEvents: ['core:startup'] }));
+    // 停机窗口内等一会儿，确认 new 未注册
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(core.getModule('new'), undefined);
+    // 停机完成
+    await stopPromise;
     assert.equal(core.started, false);
   } finally {
     rmDir(dir);

@@ -195,3 +195,107 @@ test('watch:false 时不自动监听，rescanModules 手动扫描生效', async 
     rmDir(dir);
   }
 });
+
+// ============ 模块自己改写 YAML（listen/startEvents 变化），核心同步 ============
+
+test('模块改写自己的 YAML：listen 事件表变化，核心同步（不重启、不重载代码）', async () => {
+  const dir = mkTmpDir('self');
+  try {
+    const selfedit = `module.exports = {
+  name: 'selfedit',
+  start(ctx) { ctx.exposeArray('marks', ['started']); },
+  onEvent(ctx, event) {
+    ctx.array('marks').push(event.name);
+    if (event.name.endsWith(':selfedit:add')) {
+      const fs = require('fs');
+      const path = require('path');
+      const yaml = [
+        'name: selfedit',
+        'file: ./selfedit.cjs',
+        'startEvents:',
+        '  - "core:startup"',
+        'listen:',
+        '  - "*:selfedit:add"',
+        '  - "*:selfedit:extra"',
+        '  - "*:selfedit:*"',
+      ].join('\\n');
+      fs.writeFileSync(path.join(__dirname, 'selfedit.yaml'), yaml, 'utf8');
+    }
+  },
+};
+`;
+    fs.writeFileSync(path.join(dir, 'selfedit.cjs'), selfedit);
+    fs.writeFileSync(path.join(dir, 'selfedit.yaml'), yamlFor('selfedit', { startEvents: ['core:startup'], listen: ['*:selfedit:add'] }));
+    const core = new ConnectCore({ moduleDir: dir, watch: true, pollIntervalMs: 40 });
+    await core.start();
+    await waitFor(() => core.getModule('selfedit')?.status === 'running');
+    assert.deepEqual(arr(core as any, 'public:selfedit:marks'), ['started']);
+    // 模块在 onEvent 中改写自己的 YAML（此刻只监听 selfedit:add）
+    await core.sendEvent('selfedit:add');
+    // 核心感知配置变化（config-update）——YAML 层热生效
+    await waitFor(() => core.log.byType('config-update').some((l) => l.module === 'selfedit'));
+    // 核心同步的新追踪事件表（公开 API 可查）
+    assert.deepEqual(core.getModule('selfedit')!.config.listen, ['*:selfedit:add', '*:selfedit:extra', '*:selfedit:*']);
+    // 不重启、不重载代码：start 只发生一次，模块实例状态保留
+    assert.equal(core.log.byType('module-start').filter((s) => s.module === 'selfedit').length, 1, '模块未重启');
+    assert.deepEqual(arr(core as any, 'public:selfedit:marks'), ['started', 'external:selfedit:add'], '实例状态保留');
+    // 新加的事件名即时生效（索引已更新）
+    await core.sendEvent('selfedit:extra');
+    assert.deepEqual(arr(core as any, 'public:selfedit:marks'), ['started', 'external:selfedit:add', 'external:selfedit:extra']);
+    // 新加的通配符监听生效
+    await core.sendEvent('selfedit:wild:ping');
+    assert.deepEqual(arr(core as any, 'public:selfedit:marks'), ['started', 'external:selfedit:add', 'external:selfedit:extra', 'external:selfedit:wild:ping']);
+    await core.stop();
+  } finally {
+    rmDir(dir);
+  }
+});
+
+test('模块改写自己的 YAML：startEvents 变化，新的启动事件可自动拉起模块', async () => {
+  const dir = mkTmpDir('boot');
+  try {
+    const bootcfg = `module.exports = {
+  name: 'bootcfg',
+  start(ctx) { ctx.exposeArray('marks', ['started']); },
+  onEvent(ctx, event) {
+    ctx.array('marks').push(event.name);
+    if (event.name.endsWith(':bootcfg:config')) {
+      const fs = require('fs');
+      const path = require('path');
+      const yaml = [
+        'name: bootcfg',
+        'file: ./bootcfg.cjs',
+        'startEvents:',
+        '  - "core:startup"',
+        '  - "*:bootcfg:again"',
+        'listen:',
+        '  - "bootcfg:config"',
+      ].join('\\n');
+      fs.writeFileSync(path.join(__dirname, 'bootcfg.yaml'), yaml, 'utf8');
+    }
+  },
+};
+`;
+    fs.writeFileSync(path.join(dir, 'bootcfg.cjs'), bootcfg);
+    fs.writeFileSync(path.join(dir, 'bootcfg.yaml'), yamlFor('bootcfg', { startEvents: ['core:startup'], listen: ['*:bootcfg:config'] }));
+    const core = new ConnectCore({ moduleDir: dir, watch: true, pollIntervalMs: 40 });
+    await core.start();
+    await waitFor(() => core.getModule('bootcfg')?.status === 'running');
+    // 模块改写自己的 YAML：startEvents 增加 bootcfg:again
+    await core.sendEvent('bootcfg:config');
+    await waitFor(() => core.log.byType('config-update').some((l) => l.module === 'bootcfg'));
+    // 核心已同步新 startEvents；停止模块
+    await core.stopModule('bootcfg');
+    assert.equal(core.getModule('bootcfg')!.status, 'stopped');
+    // 新的启动事件出现 -> 核心自动启动模块
+    await core.sendEvent('bootcfg:again');
+    await waitFor(() => core.getModule('bootcfg')!.status === 'running');
+    assert.deepEqual(core.getModule('bootcfg')!.config.startEvents, ['core:startup', '*:bootcfg:again']);
+    assert.deepEqual(arr(core as any, 'public:bootcfg:marks'), ['started']);
+    const starts = core.log.byType('module-start').filter((s) => s.module === 'bootcfg');
+    assert.equal(starts[starts.length - 1].reason, 'external:bootcfg:again');
+    await core.stop();
+  } finally {
+    rmDir(dir);
+  }
+});

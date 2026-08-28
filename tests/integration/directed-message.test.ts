@@ -178,3 +178,79 @@ test('多模块同时请求核心：各收各的结果，互不串扰（直回�
     await core.stop();
   } finally { rmDir(dir); }
 });
+
+// ---------------- 测试 5：投递顺序与失败隔离（已知问题 6、18） ----------------
+
+test('同一事件多个监听者：按加载顺序逐个收到（前面阻塞后面排队）', async () => {
+  const dir = mkTmpDir('order');
+  try {
+    const slow = `module.exports = {
+  name: 'slow',
+  start(ctx) { ctx.exposeArray('order', []); },
+  onEvent(ctx, event) {
+    const t0 = Date.now();
+    while (Date.now() - t0 < 100) { /* 同步阻塞 100ms */ }
+    ctx.array('order').push('slow:' + event.name);
+  },
+};
+`;
+    const a = `module.exports = {
+  name: 'a',
+  start(ctx) { ctx.exposeArray('order', []); },
+  onEvent(ctx, event) { ctx.array('order').push('a:' + event.name); },
+};
+`;
+    fs.writeFileSync(path.join(dir, 'slow.cjs'), slow);
+    fs.writeFileSync(path.join(dir, 'slow.yaml'), yamlFor('slow', { startEvents: ['core:startup'], listen: ['*:go'] }));
+    fs.writeFileSync(path.join(dir, 'a.cjs'), a);
+    fs.writeFileSync(path.join(dir, 'a.yaml'), yamlFor('a', { startEvents: ['core:startup'], listen: ['*:go'] }));
+    const core = new ConnectCore({ moduleDir: dir, watch: false });
+    await core.start();
+    // 监听顺序：slow 先注册（s < a 字母序），再 a
+    await core.sendEvent('go');
+    await waitFor(() => arr(core as any, 'public:a:order').length === 1);
+    assert.deepEqual(arr(core as any, 'public:slow:order'), ['slow:external:go']);
+    assert.deepEqual(arr(core as any, 'public:a:order'), ['a:external:go']);
+    await core.stop();
+  } finally { rmDir(dir); }
+});
+
+test('监听者处理抛错被隔离：只记 error，后续监听者仍收到', async () => {
+  const dir = mkTmpDir('iso');
+  try {
+    const bad = `module.exports = { name: 'bad', start(ctx) { ctx.exposeArray('order', []); }, onEvent() { throw new Error('处理失败'); } };`;
+    const ok = `module.exports = { name: 'ok', start(ctx) { ctx.exposeArray('order', []); }, onEvent(ctx, event) { ctx.array('order').push('ok:' + event.name); } };`;
+    fs.writeFileSync(path.join(dir, 'bad.cjs'), bad);
+    fs.writeFileSync(path.join(dir, 'bad.yaml'), yamlFor('bad', { startEvents: ['core:startup'], listen: ['*:go'] }));
+    fs.writeFileSync(path.join(dir, 'ok.cjs'), ok);
+    fs.writeFileSync(path.join(dir, 'ok.yaml'), yamlFor('ok', { startEvents: ['core:startup'], listen: ['*:go'] }));
+    const core = new ConnectCore({ moduleDir: dir, watch: false });
+    await core.start();
+    await core.sendEvent('go');
+    await waitFor(() => arr(core as any, 'public:ok:order').length === 1);
+    // bad 抛错被记 error
+    assert.ok(core.log.byType('error').some((e) => String(e.message).includes('处理事件')));
+    // ok 仍收到
+    assert.deepEqual(arr(core as any, 'public:ok:order'), ['ok:external:go']);
+    await core.stop();
+  } finally { rmDir(dir); }
+});
+
+test('sendTo 目标存在但 onMessage 抛错：返回 true（存在即送达），失败进日志', async () => {
+  const dir = mkTmpDir('s2');
+  try {
+    const thrower = `module.exports = { name: 'thrower', start(ctx) { ctx.exposeArray('marks', []); }, onMessage() { throw new Error('接收方处理失败'); } };`;
+    fs.writeFileSync(path.join(dir, 'thrower.cjs'), thrower);
+    fs.writeFileSync(path.join(dir, 'thrower.yaml'), yamlFor('thrower', { startEvents: ['core:startup'] }));
+    const core = new ConnectCore({ moduleDir: dir, watch: false });
+    await core.start();
+    // 目标存在且实现 onMessage：即使抛错也返回 true
+    const delivered = await core.sendTo('thrower', { x: 1 }, 'tester');
+    assert.equal(delivered, true);
+    // 失败被记录
+    assert.ok(core.log.byType('error').some((e) => String(e.message).includes('处理定向消息失败')));
+    // 目标不存在：返回 false
+    assert.equal(await core.sendTo('nope', { x: 1 }, 'tester'), false);
+    await core.stop();
+  } finally { rmDir(dir); }
+});

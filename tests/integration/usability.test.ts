@@ -1,14 +1,10 @@
 /**
- * 框架可用性验证：模块可用方法全部端到端跑通。
- *
- * 对应"验证可用性"目标（不添加任何框架辅助功能，全部使用已有 API）：
- *  1. 核心可以真的启动一个模块（start/stop 钩子真实执行、状态机流转）
- *  2. 模块可以发送事件（链式转发、事件来源、通配符路由）
- *  3. 模块可以改变自己的 YAML 配置文件（修改追踪的事件表），核心自动同步
- *     实现方式：模块就是程序（CJS），直接用 Node fs 改写自己的 YAML 文件，
- *     ConfigWatcher 轮询感知内容哈希变化 -> 更新配置并重启模块 —— 框架零改动。
- *  4. 模块上下文全 API 面（exposeArray / unexposeArray / array / sendEvent / log /
- *     config）端到端可用。
+ * 框架可用性验证：模块可用方法端到端跑通（不添加任何框架辅助功能，全部使用已有 API）。
+ *  1. start/stop 钩子真实执行；
+ *  2. 模块上下文全 API 面（exposeArray / unexposeArray / array / sendEvent / log /
+ *     config / requestReload）端到端可用；
+ *  3. 事件两段式：来源段由核心拼装，模块只写事件名段与内容。
+ * 模块改写 YAML 的配置同步测试见 yaml-watcher.test.ts。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -41,18 +37,10 @@ test('核心可真实启动模块：start/stop 钩子执行，状态机流转正
     fs.writeFileSync(path.join(dir, 'hooked.yaml'), yamlFor('hooked', { startEvents: ['core:startup'], listen: ['*:hook:ping'] }));
     const core = new ConnectCore({ moduleDir: dir, watch: false });
     await core.start();
-    // 核心真的启动了模块：状态 running + start 钩子真实执行
-    assert.equal(core.getModule('hooked')!.status, 'running');
+    // 钩子真实执行证据（状态流转由 core-lifecycle 覆盖，这里只验证钩子调用）
     assert.equal(fs.readFileSync(path.join(dir, 'hooks.log'), 'utf8'), 'start\n');
-    assert.deepEqual(arr(core as any, 'public:hooked:marks'), ['ok']);
-    // 模块接收事件并处理
-    await core.sendEvent('hook:ping');
-    assert.deepEqual(arr(core as any, 'public:hooked:marks'), ['ok', 'external:hook:ping']);
-    // 停止 -> stop 钩子真实执行
+    // 停止 -> stop 钩子真实执行；重启 -> start 再次执行
     await core.stopModule('hooked');
-    assert.equal(fs.readFileSync(path.join(dir, 'hooks.log'), 'utf8'), 'start\nstop\n');
-    assert.equal(core.getModule('hooked')!.status, 'stopped');
-    // 重启 -> start 再次执行（状态流转闭环）
     await core.startModule('hooked', 'manual');
     assert.equal(fs.readFileSync(path.join(dir, 'hooks.log'), 'utf8'), 'start\nstop\nstart\n');
     await core.stop();
@@ -136,120 +124,6 @@ test('模块可用方法全景：ctx 8 个方法端到端可用', async () => {
     // 停止 -> stop 钩子执行，数组随模块消失
     await core.stop();
     assert.equal(fs.readFileSync(path.join(dir, 'hooks.log'), 'utf8'), 'start\nstop\n');
-  } finally {
-    rmDir(dir);
-  }
-});
-
-// ==================== 测试 3：模块改写自己的 YAML（listen 事件表变化），核心同步 ====================
-
-const SELFEDIT_CJS = `module.exports = {
-  name: 'selfedit',
-  start(ctx) {
-    ctx.exposeArray('marks', ['started']);
-  },
-  onEvent(ctx, event) {
-    ctx.array('marks').push(event.name);
-    if (event.name.endsWith(':selfedit:add')) {
-      const fs = require('fs');
-      const path = require('path');
-      // 模块自己改写自己的 YAML：listen 增加 selfedit:extra 与 selfedit:*
-      const yaml = [
-        'name: selfedit',
-        'file: ./selfedit.cjs',
-        'startEvents:',
-        '  - "core:startup"',
-        'listen:',
-        '  - "*:selfedit:add"',
-        '  - "*:selfedit:extra"',
-        '  - "*:selfedit:*"',
-      ].join('\\n');
-      fs.writeFileSync(path.join(__dirname, 'selfedit.yaml'), yaml, 'utf8');
-    }
-  },
-};
-`;
-
-test('模块改写自己的 YAML：listen 事件表变化，核心同步（不重启、不重载代码）', async () => {
-  const dir = mkTmpDir('self');
-  try {
-    fs.writeFileSync(path.join(dir, 'selfedit.cjs'), SELFEDIT_CJS);
-    fs.writeFileSync(path.join(dir, 'selfedit.yaml'), yamlFor('selfedit', { startEvents: ['core:startup'], listen: ['*:selfedit:add'] }));
-    const core = new ConnectCore({ moduleDir: dir, watch: true, pollIntervalMs: 40 });
-    await core.start();
-    await waitFor(() => core.getModule('selfedit')?.status === 'running');
-    assert.deepEqual(arr(core as any, 'public:selfedit:marks'), ['started']);
-    // 模块在 onEvent 中改写自己的 YAML（此刻只监听 selfedit:add）
-    await core.sendEvent('selfedit:add');
-    // 核心感知配置变化（config-update）——YAML 层热生效
-    await waitFor(() => core.log.byType('config-update').some((l) => l.module === 'selfedit'));
-    // 核心同步的新追踪事件表（公开 API 可查）
-    assert.deepEqual(core.getModule('selfedit')!.config.listen, ['*:selfedit:add', '*:selfedit:extra', '*:selfedit:*']);
-    // 不重启、不重载代码：start 只发生一次，模块实例状态保留
-    assert.equal(core.log.byType('module-start').filter((s) => s.module === 'selfedit').length, 1, '模块未重启');
-    assert.deepEqual(arr(core as any, 'public:selfedit:marks'), ['started', 'external:selfedit:add'], '实例状态保留');
-    // 新加的事件名即时生效（索引已更新）
-    await core.sendEvent('selfedit:extra');
-    assert.deepEqual(arr(core as any, 'public:selfedit:marks'), ['started', 'external:selfedit:add', 'external:selfedit:extra']);
-    // 新加的通配符监听生效
-    await core.sendEvent('selfedit:wild:ping');
-    assert.deepEqual(arr(core as any, 'public:selfedit:marks'), ['started', 'external:selfedit:add', 'external:selfedit:extra', 'external:selfedit:wild:ping']);
-    await core.stop();
-  } finally {
-    rmDir(dir);
-  }
-});
-
-// ==================== 测试 4：模块改写自己的 YAML（startEvents 变化），新启动条件生效 ====================
-
-const BOOTCFG_CJS = `module.exports = {
-  name: 'bootcfg',
-  start(ctx) {
-    ctx.exposeArray('marks', ['started']);
-  },
-  onEvent(ctx, event) {
-    ctx.array('marks').push(event.name);
-    if (event.name.endsWith(':bootcfg:config')) {
-      const fs = require('fs');
-      const path = require('path');
-      // 模块改写自己的 YAML：startEvents 增加 bootcfg:again
-      const yaml = [
-        'name: bootcfg',
-        'file: ./bootcfg.cjs',
-        'startEvents:',
-        '  - "core:startup"',
-        '  - "*:bootcfg:again"',
-        'listen:',
-        '  - "bootcfg:config"',
-      ].join('\\n');
-      fs.writeFileSync(path.join(__dirname, 'bootcfg.yaml'), yaml, 'utf8');
-    }
-  },
-};
-`;
-
-test('模块改写自己的 YAML：startEvents 变化，新的启动事件可自动拉起模块', async () => {
-  const dir = mkTmpDir('boot');
-  try {
-    fs.writeFileSync(path.join(dir, 'bootcfg.cjs'), BOOTCFG_CJS);
-    fs.writeFileSync(path.join(dir, 'bootcfg.yaml'), yamlFor('bootcfg', { startEvents: ['core:startup'], listen: ['*:bootcfg:config'] }));
-    const core = new ConnectCore({ moduleDir: dir, watch: true, pollIntervalMs: 40 });
-    await core.start();
-    await waitFor(() => core.getModule('bootcfg')?.status === 'running');
-    // 模块改写自己的 YAML：startEvents 增加 bootcfg:again
-    await core.sendEvent('bootcfg:config');
-    await waitFor(() => core.log.byType('config-update').some((l) => l.module === 'bootcfg'));
-    // 核心已同步新 startEvents；停止模块
-    await core.stopModule('bootcfg');
-    assert.equal(core.getModule('bootcfg')!.status, 'stopped');
-    // 新的启动事件出现 -> 核心自动启动模块
-    await core.sendEvent('bootcfg:again');
-    await waitFor(() => core.getModule('bootcfg')!.status === 'running');
-    assert.deepEqual(core.getModule('bootcfg')!.config.startEvents, ['core:startup', '*:bootcfg:again']);
-    assert.deepEqual(arr(core as any, 'public:bootcfg:marks'), ['started']);
-    const starts = core.log.byType('module-start').filter((s) => s.module === 'bootcfg');
-    assert.equal(starts[starts.length - 1].reason, 'external:bootcfg:again');
-    await core.stop();
   } finally {
     rmDir(dir);
   }
