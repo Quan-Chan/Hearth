@@ -57,7 +57,6 @@ export class ModuleManager {
     return [...this.modules.values()];
   }
 
-  /** 按模块名取槽位（不存在返回 undefined）。 */
   getSlot(name: string): ModuleSlot | undefined {
     return this.modules.get(name);
   }

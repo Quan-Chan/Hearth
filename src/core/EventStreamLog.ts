@@ -134,12 +134,10 @@ export class EventStreamLog {
     this.activeSeq = seq;
   }
 
-  /** 所有内存中的条目。 */
   all(): LogEntry[] {
     return this.entries;
   }
 
-  /** 按类型过滤。 */
   byType(type: string): LogEntry[] {
     return this.entries.filter((e) => e.type === type);
   }
