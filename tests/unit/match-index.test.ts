@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { MatchIndex } from '../../src/core/MatchIndex';
 import { anyEventMatches } from '../../src/core/EventMatcher';
 
-/** 简单确定性伪随机（不依赖 Math.random，保证可复现）。 */
+/** 确定性伪随机（不依赖 Math.random，可复现）。 */
 function mulberry32(seed: number): () => number {
   let a = seed;
   return () => {

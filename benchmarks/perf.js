@@ -2,7 +2,7 @@
  * 性能基准（只读，不修改任何文件）：
  *  1. 事件比对：MatchIndex（精确表+通配列表） vs 全量比对（编译缓存正则）  —— CPU
  *  2. 配置轮询：stat 指纹轮 vs 全量 read+sha1 轮                          —— CPU
- * 运行：npm run bench（先 build 出 dist，脚本从 dist 引用实现，保证与源码一致）
+ * 运行：npm run bench（先 build 出 dist，脚本从 dist 引用实现，与源码一致）
  */
 const fs = require('fs');
 const path = require('path');

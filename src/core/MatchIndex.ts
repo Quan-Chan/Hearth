@@ -5,7 +5,7 @@
  *  - 精确表：无通配符的条件，事件名相等即命中（字符串比较，零正则，O(1)）；
  *  - 通配列表：含通配符的条件，事件到达时逐条正则比对。
  * 匹配结果与 eventMatches 逐字一致（见 EventMatcher.ts）：这里只决定"测哪些条件"，
- * 不改变"怎么测"。精确条件永远 O(1) 命中；通配条件逐条测。
+ * 不改变"怎么测"。精确条件 O(1) 命中；通配条件逐条测。
  */
 import { patternToRegExp } from './EventMatcher';
 
@@ -30,7 +30,7 @@ export class MatchIndex<T> {
 
   /** 匹配事件名：精确表 O(1) + 通配列表逐条比对。
    *  同一槽可能因多个条件命中出现多次，这里不去重——去重后的顺序由调用方
-   *  （EventDispatcher.dedupSorted）统一按加载序号排，保证与全量比对结果一致。 */
+   *  （EventDispatcher.dedupSorted）统一按加载序号排，与全量比对结果一致。 */
   lookup(name: string): T[] {
     const out: T[] = [];
     const hit = this.exact.get(name);

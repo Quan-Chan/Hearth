@@ -1,7 +1,7 @@
 /**
- * 模块文件夹监听器：框架核心始终监听模块文件夹（**不递归** —— 只识别模块目录本层与
- * 『每个模块一个子文件夹』层；不深入子目录，避免把模块内部嵌套的子核心/子模块配置
- * 文件误认成本核心的模块，造成不可预测的文件冲突）。
+ * 模块文件夹监听器：框架核心始终监听模块文件夹（不递归 —— 只识别模块目录本层与
+ * 每个模块一个子文件夹的层；不深入子目录，避免把模块内部嵌套的子核心/子模块配置
+ * 文件误认成本核心的模块，造成文件冲突）。
  * 模块布局规则：每个模块一个文件夹，文件夹内放 <name>.yaml + <name>.cjs；
  * 也支持把 <name>.yaml 直接放在模块目录顶层（扁平，测试常用）。
  *  - 新的 YAML 配置文件出现   -> onLoad
@@ -9,10 +9,10 @@
  *  - YAML 文件被删除          -> onRemove
  * 检测策略（性能）：稳态每轮只 statSync（mtimeMs+size+ctimeMs 指纹），指纹不变的文件
  * 直接跳过、不读内容；指纹变化才 readFileSync + sha1 二次确认（同内容只改 mtime 的
- * touch 不触发 onUpdate）；哈希真变才解析 YAML。解析失败不更新指纹 -> 下轮重试（自愈）。
+ * touch 不触发 onUpdate）；哈希真变才解析 YAML。解析失败不更新指纹 -> 下轮重试。
  * 为什么轮询而不是 fs.watch：fs.watch 在 Windows/macOS 上的事件丢失与行为差异问题
  * 多（保存中间态、编辑器替换文件都可能漏报/误报），轮询 + 内容哈希每帧给出确定的结论，
- * 换来的是跨平台一致可靠；代价只是一个 200ms 的 stat 心跳，稳态开销可忽略。
+ * 换来的是跨平台一致可靠；代价是每 200ms 一次 stat，稳态开销可忽略。
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -134,12 +134,12 @@ export class ConfigWatcher {
             path.basename(yamlPath, path.extname(yamlPath)),
             err instanceof Error ? err.message : String(err),
           );
-          continue; // 不更新指纹 -> 下轮重试（自愈）
+          continue; // 不更新指纹 -> 下轮重试
         }
         candidates.push({ yamlPath, stat, hash, cfg });
       }
       // 阶段2：删除检查 —— known 记录的 yamlPath 已不在磁盘上，即模块消失。
-      //   与回调成败无关：文件是否还存在是删除的唯一依据（坏 YAML/被拒文件的
+      //   与回调成败无关：文件是否存在是删除的依据（坏 YAML/被拒文件的
       //   存在不影响其他文件的删除判定）。
       for (const [name, info] of [...this.known]) {
         if (!fileSet.has(info.yamlPath)) {

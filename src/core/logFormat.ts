@@ -4,7 +4,7 @@
  * 每条日志三字段主结构：
  *   1. type    日志类型：核心的动作（event / event-drop / module-start / config-load / ...）
  *   2. source  日志来源：动作主要涉及的对象（core / external / 模块名）
- *   3. message 日志信息：人类可读的具体内容（如事件名、原因描述）
+ *   3. message 日志信息：具体内容（如事件名、原因描述）
  *
  * 命名统一 kebab-case（域-动作）；附加字段（event/data/recipients/reason/error）保留结构化数据。
  * 日志是一条连续的时间线：发生什么就记录什么，按时间顺序逐条输出（formatLogEntry）。
@@ -12,7 +12,7 @@
  */
 import type { LogEntry } from '../types';
 
-/** 全部日志类型（常量集中管理，保证命名统一）。 */
+/** 全部日志类型（常量集中管理，命名统一）。 */
 export const LOG_TYPES = {
   // 核心生命周期
   CORE_START: 'core-start',
@@ -61,7 +61,7 @@ const TYPE_TO_CATEGORY: Record<string, LogCategory> = {
   error: 'error',
 };
 
-/** 展示层单字段的最大显示字符数；存储层永远完整（见 EventStreamLog），截断只发生在渲染时。 */
+/** 展示层单字段的最大显示字符数；存储层完整（见 EventStreamLog），截断只发生在渲染时。 */
 export const DISPLAY_TRUNCATE_CHARS = 2048;
 
 /** 展示层文本缩短：超长部分以省略号 + 原始长度标注替代，信息本体以落盘文件为准。 */
@@ -75,7 +75,7 @@ export function categoryOf(type: string): LogCategory {
   return TYPE_TO_CATEGORY[type] ?? 'error';
 }
 
-/** 人类可读单行日志：HH:MM:SS.mmm [type] source: message  附加关键字段。 */
+/** 单行日志：HH:MM:SS.mmm [type] source: message  附加关键字段。 */
 export function formatLogEntry(entry: LogEntry): string {
   const t = (entry.t ?? '').slice(11, 23);
   let line = t + ' [' + entry.type + '] ' + entry.source + ': ' + entry.message;
@@ -88,7 +88,7 @@ export function formatLogEntry(entry: LogEntry): string {
     extra.push('转发=' + entry.recipients.join(','));
   }
   if (entry.data !== undefined) {
-    // 展示层缩短：文件里存的是完整内容，这里只为人类可读性截断
+    // 展示层缩短：文件里存的是完整内容，这里只为显示截断
     extra.push('data=' + truncateDisplay(JSON.stringify(entry.data)));
   }
   if (entry.reason !== undefined) {

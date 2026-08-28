@@ -1,5 +1,5 @@
 /**
- * Connect-Core 核心：一个极简的中间层，同时是整个软件的核心层。
+ * Connect-Core 核心：框架的中间层，同时是软件的核心层。
  *
  * 职责（对应 docs/需求.md 的框架核心方法）：
  *   1. 启动模块        -> startModule（委托 ModuleManager）
@@ -15,15 +15,15 @@
  * 启动核心 == 启动整个软件：core.start() 会扫描模块配置并发出 core:startup，
  * 所有依赖该事件的模块自动启动，无需单独启动任何模块。
  *
- * 运行循环（整个软件的心脏，事件的流转路径）：
+ * 运行循环：
  *   start() -> 扫描模块目录 -> 重建比对索引 -> 发 core:startup（匹配模块自动启动）。
  *   此后每一次 sendEvent 走同一条三步：① 把 startEvents 命中的未运行模块拉起来
- *   （模块间的 DAG 由此涌现）；② 收集 listen 命中的监听者（无人认领则记 event-drop）；
+ *   （模块间的启动依赖链由此建立）；② 收集 listen 命中的监听者（无人认领则记 event-drop）；
  *   ③ 逐个派发事件消息，单点失败只记 error、不影响其他模块。
  *   配置热加载不重启核心：监听器感知到文件增/改/删，当场 加载/重启/移除 模块并重建索引。
  *   stop() -> 逐个调用模块 stop() 等返回"已关闭"（超时强制关闭）-> 关闭日志。
  *
- * 文件组织（一个文件 = 一个功能部分，避免碎片化）：
+ * 文件组织（一个文件 = 一个功能部分）：
  *   - 本文件：核心类本体 —— 生命周期 / 配置热加载 / 公共数组 API / 查询 / 委托；
  *   - ModuleManager.ts：模块状态机（启动/停止/重启/停机收尾 + 槽位表）；
  *   - EventDispatcher.ts：事件派发与定向通道（sendEvent/sendDirected/sendTo）；
@@ -60,9 +60,9 @@ export class ConnectCore {
   private arrays = new ArrayRegistry();
   private watcher?: ConfigWatcher;
   private startedFlag = false;
-  /** CLI 指令协议处理器（惰性创建：只有真的收到定向指令才实例化，普通核心零污染）。 */
+  /** CLI 指令协议处理器（惰性创建：只有真的收到定向指令才实例化，普通核心不创建）。 */
   private cliProtocolInst?: CliProtocol;
-  /** 停机中标记：置位后拒绝外部事件/启动/配置变更，保证关闭过程是事务。 */
+  /** 停机中标记：置位后拒绝外部事件/启动/配置变更，关闭过程不可被中断。 */
   private stoppingFlag = false;
   /** 模块状态机：槽位表 + 启动/停止/重启/停机收尾。 */
   private readonly manager: ModuleManager;
@@ -103,14 +103,14 @@ export class ConnectCore {
   }
 
   /** 统一日志出口：记录一条核心自己的日志（三字段：type/source/message + 附加字段）。
-   *  协议/管理面（如 CliProtocol）也从这里记录，保证所有核心动作进入日志时间线。 */
+   *  协议/管理面（如 CliProtocol）也从这里记录，所有核心动作都进入日志时间线。 */
   writeLog(type: LogType, source: string, message: string, extra: Record<string, unknown> = {}): void {
     this.log.record({ type, source, message, ...extra });
   }
 
   /** 进程级守护（guardProcess 开启时安装一次，全部开启者共享）：
    *  模块私下发起的异步失败与漏网的同步异常不再杀死进程，只进日志时间线。
-   *  注意：捕获 uncaughtException 后进程会带伤继续运行，宿主需自行权衡。 */
+   *  捕获 uncaughtException 后进程继续运行，宿主需自行权衡。 */
   private static installProcessGuard(): void {
     if (ConnectCore.processGuardInstalled) return;
     ConnectCore.processGuardInstalled = true;
@@ -138,7 +138,7 @@ export class ConnectCore {
     }
     this.writeLog(LOG_TYPES.CORE_START, 'core', '核心启动');
 
-    // 坏 YAML 只记 error、不让核心跟着殉葬。
+    // 坏 YAML 只记 error、核心继续运行。
     this.watcher = new ConfigWatcher({
       dir: this.options.moduleDir,
       watch: this.options.watch,
@@ -159,7 +159,7 @@ export class ConnectCore {
     await this.sendEvent('startup', undefined, 'core');
   }
 
-  /** 停止整个软件。协议很简单：
+  /** 停止整个软件：
    *  ① 对每个运行模块调用 stop() 钩子——stop() 返回（resolve）即该模块"已关闭"；
    *  ② 等待全部模块返回"已关闭"：全部返回 → 关闭自己；超过 stopTimeoutMs 仍未返回 → 强制关闭。
    *  （① ② 由 ModuleManager.stopAll 执行。）
@@ -167,9 +167,9 @@ export class ConnectCore {
   async stop(): Promise<void> {
     if (!this.startedFlag || this.stoppingFlag) return;
     this.stoppingFlag = true;
-    // 冻结文件面：停机期间不再加载/更新/移除配置，杜绝"关到一半冒出新模块"的复活竞态。
+    // 冻结文件面：停机期间不再加载/更新/移除配置，防止停机途中新模块被注册。
     // 先停 watcher 再停模块的原因：若顺序反过来，停模块期间新 YAML 会触发新模块启动，
-    // 停机集合就会边关边长，永远关不完；冻结文件面后模块集合固定，stopAll 关的就是全集。
+    // 停机集合会边关边长；冻结文件面后模块集合固定，stopAll 关的就是全集。
     await this.watcher?.stop();
     await this.manager.stopAll();
     // 收尾：核心自身的数组也遵守"拥有者消失即注销"的数组规则。
@@ -220,7 +220,7 @@ export class ConnectCore {
 
   // ==================== CLI 指令协议（委托 CliProtocol） ====================
 
-  /** 惰性获取 CLI 指令协议处理器：只有真的收到定向指令才创建，普通核心保持零污染。 */
+  /** 惰性获取 CLI 指令协议处理器：只有真的收到定向指令才创建。 */
   private get cliProtocol(): CliProtocol {
     if (!this.cliProtocolInst) this.cliProtocolInst = new CliProtocol(this);
     return this.cliProtocolInst;
@@ -267,7 +267,7 @@ export class ConnectCore {
   private async handleConfigUpdate(cfg: ModuleConfig, yamlPath: string): Promise<boolean> {
     if (this.stoppingFlag) return true; // 停机中：不再应用任何配置变化
     const prev = this.manager.getSlot(cfg.name);
-    // 同名不同文件：本文件不是该模块名当前归属的 YAML，拒绝应用（模块名全局唯一，先注册者保留）
+    // 同名不同文件：本文件不是该模块名当前归属的 YAML，拒绝应用（模块名全库不允许重复，先注册者保留）
     if (prev && prev.yamlPath !== yamlPath) {
       this.writeLog(LOG_TYPES.ERROR, cfg.name,
         `配置更新被拒绝：模块名 ${cfg.name} 已被 ${prev.yamlPath} 占用（同名模块不允许安装）`,

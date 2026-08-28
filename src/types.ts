@@ -36,7 +36,7 @@ export interface DirectedMessage {
 
 /** 模块 YAML 配置文件解析后的形态。 */
 export interface ModuleConfig {
-  /** 模块名（全局唯一，作为模块身份标识） */
+  /** 模块名（模块身份标识，全库不允许重复） */
   name: string;
   /** 模块程序文件路径（相对 YAML 文件所在目录） */
   file: string;
@@ -74,7 +74,7 @@ export interface ModuleSlot {
   seq: number;
   /** 启动代数：关闭/取消会使旧的启动尝试作废（陈旧结果不得写回状态） */
   startSeq: number;
-  /** 进行中的启动过程：同一模块同时只允许一次启动尝试，防止事件风暴重复拉起 */
+  /** 进行中的启动过程：同一模块同时只允许一次启动尝试，防止事件密集到达时重复拉起 */
   inflightStart?: Promise<void>;
   /** 启动超时后置位：不再因事件自动重试（悬挂函数无法终止，重复尝试只会堆积），
    *  需手动启动或配置更新解锁。 */
@@ -82,7 +82,7 @@ export interface ModuleSlot {
 }
 
 /** 模块程序（被加载的"程序"）的导出形态。
- *  模块名不在此声明：唯一来源是 YAML 的 name 字段。 */
+ *  模块名不在此声明：来源是 YAML 的 name 字段。 */
 export interface ModuleDefinition {
   /** 模块启动钩子：被核心启动时调用 */
   start?(ctx: ModuleContext): void | Promise<void>;
@@ -107,13 +107,13 @@ export interface ConnectCoreOptions {
   /** 是否把日志同步输出到控制台，默认 false */
   logToConsole?: boolean;
   /** 进程级守护：捕获模块造成的"没人处理的异步失败"与未捕获异常，只记日志、不让进程退出。默认 false。
-   *  注意：开启后 uncaughtException 也不再终止进程，宿主需自行权衡。 */
+   *  开启后 uncaughtException 也不再终止进程，宿主需自行权衡。 */
   guardProcess?: boolean;
   /** 全核默认的模块启动超时（毫秒）；0 或不配 = 不设超时。可被每个模块 YAML 的 startTimeoutMs 覆盖。 */
   defaultStartTimeoutMs?: number;
   /** 日志在内存里最多保留多少条（超出丢最旧的；落盘文件不受影响）。默认 20000。 */
   maxLogMemoryEntries?: number;
-  /** 停止等待上限（毫秒）：核心停机时等待**全部**模块返回"已关闭"（stop() 完成）的时限；
+  /** 停止等待上限（毫秒）：核心停机时等待全部模块返回"已关闭"（stop() 完成）的时限；
    *  超时后强制关闭软件（哪个模块未返回会被记录在错误日志里）。默认 20000。 */
   stopTimeoutMs?: number;
 }
@@ -127,7 +127,7 @@ export interface LogEntry {
   type: string;
   /** ② 日志来源：动作涉及的对象（core / external / 模块名） */
   source: string;
-  /** ③ 日志信息：人类可读的具体内容 */
+  /** ③ 日志信息：具体内容 */
   message: string;
   [key: string]: unknown;
 }

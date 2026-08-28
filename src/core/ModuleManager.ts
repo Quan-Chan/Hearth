@@ -35,7 +35,7 @@ function isManualishStart(reason?: string): boolean {
   );
 }
 
-/** 模块启动原因 -> 人类可读描述（用于 module-start 日志的 message）。 */
+/** 模块启动原因 -> 描述（用于 module-start 日志的 message）。 */
 function describeStartReason(reason?: string): string {
   if (!reason || reason === 'manual') return '手动启动';
   if (reason === 'config-load') return '配置加载，启动事件已发生';
@@ -63,7 +63,7 @@ export class ModuleManager {
   }
 
   /** 核心方法 1：启动模块。reason 为触发启动的事件名（用于日志）。
-   *  启动全程有"代数"护航：关闭/取消会使旧的启动尝试作废，陈旧结果不得写回状态。
+   *  启动全程有"代数"机制：关闭/取消会使旧的启动尝试作废，陈旧结果不得写回状态。
    *  同一模块同时只允许一次启动尝试；可配置超时（YAML 的 startTimeoutMs 或核心选项），
    *  超时只放弃等待并记日志——悬挂的启动函数本身无法终止，同时锁住不再自动重试。
    *  每次启动都从磁盘重新加载模块程序（重启因此拿到最新代码）。 */
@@ -73,7 +73,7 @@ export class ModuleManager {
 
   /** 请求自身重启：模块（或宿主）替换代码文件后调用本方法，核心先验证新代码再停旧启新。
    *   - 新代码（loadModuleProgram）加载失败：记录 error、返回 false，旧实例继续运行不受影响
-   *     （验证不过就绝不更换，替换不会中途出错）；
+   *     （验证不过就不更换，替换不会中途出错）；
    *   - 加载成功：停止旧实例（其公开数组随拥有者消失）→ 用已验证的 def 直接启动新实例，
    *     不重新加载（避免工厂函数重复求值产生的副作用）；
    *   - 状态保存与恢复、版本管理都是模块自己的职责（核心不迁移任何模块变量、不记录版本）。
@@ -97,7 +97,7 @@ export class ModuleManager {
       this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, '模块被禁用，跳过重启', { module: name, reason: 'disabled' });
       return false;
     }
-    // ① 先验证新代码：加载失败则保留旧实例继续运行（重启不会"换到一半坏掉"）
+    // ① 先验证新代码：加载失败则保留旧实例继续运行（替换不会中途出错）
     let def: ModuleDefinition;
     try {
       def = await loadModuleProgram(slot.config.file);
@@ -169,7 +169,7 @@ export class ModuleManager {
       try {
         const def = preloadedDef ?? (await loadModuleProgram(slot.config.file));
         const ctx = new ModuleContext(this.core, name, slot.config);
-        // 等待启动函数完成；配置了超时则只等到期限——超时不终止函数本身（JS 无法强杀），只是不再等它。
+        // 等待启动函数完成；配置了超时则只等到期限——超时不终止函数本身，只是不再等它。
         let timedOut = false;
         let startError: unknown;
         await new Promise<void>((resolve) => {
@@ -196,7 +196,7 @@ export class ModuleManager {
           return;
         }
         if (startError) throw startError;
-        // 启动完成前若已被关闭/取消：立即回收这次启动，不写入运行状态（防复活）。
+        // 启动完成前若已被关闭/取消：立即回收这次启动，不写入运行状态。
         if (seq !== slot.startSeq || this.core.stopping || !this.core.started) {
           try { await def.stop?.(ctx); } catch { /* 回收失败忽略：核心都在关了 */ }
           if (seq === slot.startSeq) slot.status = 'stopped';
@@ -227,7 +227,7 @@ export class ModuleManager {
     await run;
   }
 
-  /** 核心方法 2：关闭单个模块。关闭后其公开的数组自动取消映射（自然消失，不留残档）。
+  /** 核心方法 2：关闭单个模块。关闭后其公开的数组自动取消映射。
    *  停止一个模块：调用其 stop() 钩子并等待返回——模块的 stop() 返回即"已关闭"。
    *  （全局停机由 stopAll() 并行等待 + 超时强制关闭；本方法用于 CLI 停止指令、
    *  配置 enabled:false、以及模块请求重启时的停止环节。） */
@@ -262,7 +262,7 @@ export class ModuleManager {
       });
     }
     slot.status = 'stopped';
-    // 模块关闭 -> 其公开数组映射全部注销（数据随拥有者消失，不留残档）。
+    // 模块关闭 -> 其公开数组映射全部注销。
     const removed = this.core.removeOwnerArrays(name);
     this.core.writeLog(
       LOG_TYPES.MODULE_STOP,
@@ -283,7 +283,7 @@ export class ModuleManager {
       if (m.status === 'starting') {
         // 启动尚未完成：作废这次启动（代数+1，陈旧结果不得写回），真正的启动流程稍后自行收尾。
         // 不等它的原因：启动函数可能悬挂（如等待外部资源），停机时限不应被它拖住；
-        // 作废后启动流程检测到代数已变，会自动回收（调用 stop 并放弃写运行状态）。
+        // 作废后启动流程检测到代数已变，自动回收（调用 stop 并放弃写运行状态）。
         m.startSeq++;
         m.status = 'stopped';
         m.inflightStart = undefined;
@@ -304,7 +304,7 @@ export class ModuleManager {
           });
         }
         m.status = 'stopped';
-        // 模块关闭 -> 其公开数组映射全部注销（数据随拥有者消失，不留残档）。
+        // 模块关闭 -> 其公开数组映射全部注销。
         const removed = this.core.removeOwnerArrays(m.name);
         this.core.writeLog(
           LOG_TYPES.MODULE_STOP,
@@ -315,7 +315,7 @@ export class ModuleManager {
       })();
       closing.push(close);
     }
-    // 全部"已关闭"承诺兑现 → 结束；超时 → 强制关闭
+    // 全部返回"已关闭" → 结束；超时 → 强制关闭
     const allClosed = Promise.all(closing).then(() => true).catch(() => true);
     const timeout = new Promise<boolean>((resolve) => {
       const timer = setTimeout(() => resolve(false), this.core.options.stopTimeoutMs);
@@ -334,7 +334,7 @@ export class ModuleManager {
   }
 
   /** 配置加载：注册新模块槽位。模块名已被其他 YAML 占用时拒绝（返回 false）——
-   *  名字是模块的全局身份，允许顶替等于允许"伪装成同名模块"上线（防注入）。
+   *  名字是模块的身份标识，允许顶替等于允许"伪装成同名模块"上线（防注入）。
    *  注册只维护槽位表；索引重建与 config-load 日志由调用方（ConnectCore）负责。 */
   register(cfg: ModuleConfig, yamlPath: string): boolean {
     if (this.modules.has(cfg.name)) return false;
@@ -356,7 +356,7 @@ export class ModuleManager {
    *  索引重建、config-update 日志与 enabled:false 的停止决策由调用方（ConnectCore）负责。 */
   async applyUpdate(cfg: ModuleConfig, yamlPath: string): Promise<boolean> {
     const prev = this.modules.get(cfg.name);
-    // 同名不同文件：本文件不是该模块名当前归属的 YAML，拒绝应用（模块名全局唯一，先注册者保留）
+    // 同名不同文件：本文件不是该模块名当前归属的 YAML，拒绝应用（模块名全库不允许重复，先注册者保留）
     if (prev && prev.yamlPath !== yamlPath) return false;
     const wasRunning = prev?.status === 'running';
     this.modules.set(cfg.name, {
@@ -367,8 +367,7 @@ export class ModuleManager {
       def: prev?.def,
       ctx: prev?.ctx,
       seq: prev?.seq ?? ++this.slotSeq,
-      startSeq: (prev?.startSeq ?? 0) + 1, // 配置更新使旧代启动全部作废：在途启动用的是旧配置（如旧的 startTimeoutMs），
-      // 结果不应写回新配置的槽位，代数+1 让陈旧启动在完成时自我作废。
+      startSeq: (prev?.startSeq ?? 0) + 1, // 配置更新使旧代启动全部作废：在途启动用旧配置（如旧的 startTimeoutMs），结果不应写回
     });
     // 运行中的模块：只刷新配置引用，不重启、不重载代码
     if (wasRunning && prev?.ctx) {

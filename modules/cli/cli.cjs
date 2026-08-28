@@ -1,5 +1,5 @@
 /**
- * CLI 模块（可选模块）：一个极简的终端界面，走【信息直达】通道。
+ * CLI 模块（可选模块）：一个终端界面，走【信息直达】通道。
  * 它做的事只有两件：把命令用 sendTo 直接发给核心；核心把结果直接回传，onMessage 收到后打印。
  * 外加一个自己读日志文件的 grep 小功能。
  *
@@ -19,7 +19,7 @@ function ask(ctx, cmd, args) {
   ctx.sendTo('core', { cmd, args: args || {} }).catch(() => {});
 }
 
-/** 简单 JSON 参数解析：能解析就用 JSON，否则当作原始字符串。 */
+/** JSON 参数解析：能解析就用 JSON，否则当作原始字符串。 */
 function parseArg(s) {
   if (s === undefined) return undefined;
   try { return JSON.parse(s); } catch { return s; }
@@ -207,7 +207,7 @@ module.exports = {
     } else {
       console.log('✔ ' + JSON.stringify(r.result));
     }
-    // 异步回复打完后重新出示提示符，保证箭头一直挂着
+    // 异步回复打完后重新出示提示符，提示符保持显示
     if (rl) rl.prompt();
   },
   async stop(ctx) {

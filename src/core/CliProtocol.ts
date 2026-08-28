@@ -2,7 +2,7 @@
  * CLI 指令协议（核心侧实现）：目标为 core 的定向信息被解释为管理指令。
  *
  * 指令内容与结果全走定向信息：调用方 sendTo('core', { cmd, args })，
- * 核心执行指令（event/start/stop/send/state/index），结果 { cmd, ok, result, error }
+ * 核心执行指令（event/start/stop/send/state），结果 { cmd, ok, result, error }
  * 经 sendTo 直接回传发起方；结束指令 exit/quit 先回执再停止核心。
  *
  * 划分：核心只做"执行指令 + 回传结果"的协议，界面、解析、日志展示归可选的 cli 模块端。
@@ -17,9 +17,8 @@ type CliHandler = (args: Record<string, unknown>, result: Record<string, unknown
 export class CliProtocol {
   private readonly core: ConnectCore;
 
-  /** 指令派发表：cmd -> 处理器。
-   *  用表驱动而非 if/else 链的原因：新增指令只加一个条目，解析/执行/回传的公共骨架
-   *  （handleDirected）保持不变；每个处理器只做三件事——解析参数、执行、把结果写进 result.result。 */
+  /** 指令派发表：cmd -> 处理器。新增指令只加一个条目，解析/执行/回传的公共骨架
+   *  （handleDirected）保持不变；每个处理器做三件事——解析参数、执行、把结果写进 result.result。 */
   private readonly handlers: Record<string, CliHandler> = {
     // 生成一个自定义事件（来源沿用请求方；事件名为两段式，来源段由核心拼装）
     event: async (args, result, source) => {

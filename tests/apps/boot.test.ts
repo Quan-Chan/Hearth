@@ -1,5 +1,5 @@
 /**
- * 启动即整机：从公共入口 startCore 启动核心 == 启动整个软件，
+ * 启动整个软件：从公共入口 startCore 启动核心 == 启动整个软件，
  * 无需单独启动任何模块（模块按 YAML 的 startEvents 看事件自动启动）。
  */
 import { test } from 'node:test';
@@ -9,7 +9,7 @@ import * as path from 'path';
 import { startCore, createCore } from '../../src/index';
 import { mkTmpDir, rmDir, arr, yamlFor } from '../helpers';
 
-test('startCore：一次启动整机软件，模块按事件自动启动', async () => {
+test('startCore：一次启动软件，模块按事件自动启动', async () => {
   const tmp = mkTmpDir('boot');
   try {
     // 自包含夹具：hello 模块 core:startup 即启动；echo 模块监听 greet

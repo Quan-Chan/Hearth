@@ -2,13 +2,13 @@
  * 核心日志：一条"只记录核心自己干的事情"的连续时间线。
  * 每条记录三字段主结构：{ type, source, message }（见 logFormat.ts）+ 任意结构化附加字段。
  *
- * 内容完整性规则（重要）：日志内容永远完整保存，框架不在存储层做任何截断——
+ * 内容完整性规则：日志内容完整保存，框架不在存储层做任何截断——
  * 过长的 data 只在展示层（formatLogEntry / CLI 渲染）缩短显示并标注原始长度，
- * 查阅者永远能从落盘文件里拿到完整信息。
+ * 落盘文件里保留完整信息。
  *
  * 双层存储：内存 entries 供进程内即时查询（条数有上限，超出丢最旧；内容同样不截断），
- * JSONL 追加流负责持久化；写盘失败只吞掉、绝不影响核心主流程。
- * 数组操作不写日志（高频数据通道，逐条记会撑爆文件）。
+ * JSONL 追加流负责持久化；写盘失败只吞掉、不影响核心主流程。
+ * 数组操作不写日志（高频数据通道，逐条记会快速占满文件）。
  *
  * 分文件策略（按天 + 按大小轮转）：配置的 filePath 是"基础路径"，实际文件为
  *   <目录>/<基础名>.<YYYY-MM-DD>.<三位序号><扩展名>（日期取自条目时间戳的 UTC 日份，与内容时间一致）。
@@ -24,7 +24,7 @@ import type { LogEntry } from '../types';
 /** 单日单文件的软上限：超过后"下一条"记录启用新文件（本条不截断、不搬家）。 */
 const ROTATE_SIZE_LIMIT_BYTES = 128 * 1024;
 
-/** 由 ISO 时间戳取 UTC 日份（与条目 t 同源，保证文件名与内容时间一致）。 */
+/** 由 ISO 时间戳取 UTC 日份（与条目 t 同源，文件名与内容时间一致）。 */
 function dayOf(iso: string | undefined): string {
   const d = iso ? new Date(iso) : new Date();
   const p = (n: number): string => String(n).padStart(2, '0');
@@ -68,7 +68,7 @@ export class EventStreamLog {
     this.maxMemoryEntries = opts.maxMemoryEntries;
   }
 
-  /** 追加一条记录（先落内存再到磁盘，顺序一致）。内容永远完整，不做任何截断。 */
+  /** 追加一条记录（先落内存再到磁盘，顺序一致）。内容完整，不做任何截断。 */
   record(entry: LogEntry): void {
     const full: LogEntry = { t: new Date().toISOString(), ...entry };
     this.entries.push(full);
@@ -77,7 +77,7 @@ export class EventStreamLog {
     }
     this.ensureStream(full);
     if (this.consoleOut) {
-      // 控制台输出人类可读格式（文件保持 JSONL 原样）；过长 data 在 formatLogEntry 里做展示级缩短
+      // 控制台输出单行格式（文件保持 JSONL 原样）；过长 data 在 formatLogEntry 里做展示级缩短
       console.log(formatLogEntry(full));
     }
     if (this.stream) {

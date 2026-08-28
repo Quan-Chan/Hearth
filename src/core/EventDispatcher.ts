@@ -46,7 +46,7 @@ export class EventDispatcher {
    *  调用方（模块 ctx.sendEvent / 核心自产 / 宿主）只负责给事件名段与内容 data。 */
   async sendEvent(name: string, data?: unknown, source: string = 'external'): Promise<void> {
     if (!this.core.started) throw new Error('Connect-Core 未启动，不能发送事件');
-    // 停机期间冻结事件面：外部与模块的事件一律拒绝（source 为 core 的保留给停机期间的内部收尾）
+    // 停机期间冻结事件面：外部与模块的事件一律拒绝
     if (this.core.stopping && source !== 'core') {
       throw new Error('Connect-Core 正在关闭，不能再发送事件');
     }
@@ -63,8 +63,7 @@ export class EventDispatcher {
     const event: CoreEvent = { name: fullName, data };
 
     // 同一事件可兼两种角色：对"没在跑"是启动信号（startEvents），对"在跑"是工作指令（listen）。
-    // 这样设计的原因：模块的启动依赖（startEvents）与运行期订阅（listen）共用同一套事件名，
-    // 模块作者只声明一次意图，核心按模块当前状态自动选择行为，不需要单独的"启动专用事件"。
+    // 启动依赖与运行期订阅共用同一套事件名，核心按模块当前状态自动选择行为。
     // 1) 比对启动事件：未运行的模块若 startEvents 匹配，则启动它（索引查找，跳过全量比对）
     const toStart = this.dedupSorted(this.startIndex.lookup(fullName)).filter(
       (m) => m.status !== 'running' && m.config.enabled,
@@ -109,7 +108,7 @@ export class EventDispatcher {
     return out.sort((a, b) => a.seq - b.seq);
   }
 
-  /** 逐个派发事件消息：单个模块失败只记 error 日志，不影响其他模块（失败隔离）。 */
+  /** 逐个派发事件消息：单个模块失败只记 error 日志，不影响其他模块。 */
   private async deliverTo(recipients: ModuleSlot[], event: CoreEvent, failPrefix: string): Promise<void> {
     for (const m of recipients) {
       try {
@@ -182,8 +181,7 @@ export class EventDispatcher {
       } catch (err) {
         const em = err instanceof Error ? err.message : String(err);
         this.core.writeLog(LOG_TYPES.ERROR, target, '处理定向消息失败: ' + em, { target: target, error: em });
-        // 已送达：对方处理失败被隔离（只记 error），接收方存在就算送达。
-        // 返回值的含义是"有没有接收方"，不是"对方处理成功与否"——失败详情走日志。
+        // 返回值表示"有没有接收方"：对方处理失败只记 error，接收方存在就算送达。
         return true;
       }
     }
