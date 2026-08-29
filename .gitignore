@@ -6,4 +6,3 @@ logs/
 work/
 .test-build/
 .npm-cache/
-.dsh/
