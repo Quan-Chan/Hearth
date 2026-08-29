@@ -72,7 +72,7 @@ function makeFixtures(dir: string): void {
 }
 
 function makeCore(dir: string): ConnectCore {
-  return new ConnectCore({ moduleDir: dir, watch: false });
+  return new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
 }
 
 test('启动核心 == 启动整个软件：core:startup 自动启动匹配模块', async () => {

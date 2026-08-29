@@ -21,7 +21,7 @@ test('模块加载顺序按自然排序：m2 在 m10 前，alpha-2 在 alpha-10 
   const dir = mkTmpDir('nat');
   try {
     for (const m of ['m10', 'alpha-10', 'm2', 'alpha-2']) writeModule(dir, m);
-    const core = new ConnectCore({ moduleDir: dir, watch: false });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     await core.sendEvent('go');
     const reg = core.listModules().map((m) => m.name);

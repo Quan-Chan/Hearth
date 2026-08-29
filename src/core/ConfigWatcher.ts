@@ -86,9 +86,10 @@ export class ConfigWatcher {
     }
   }
 
-  /** 全量扫描目录，与已知状态比对并触发回调。 */
-  async rescan(): Promise<void> {
-    if (this.scanning) return;
+  /** 全量扫描目录，与已知状态比对并触发回调。返回是否真正执行了扫描
+   *  （false = 上一次扫描仍在进行中，本次调用被跳过）。 */
+  async rescan(): Promise<boolean> {
+    if (this.scanning) return false;
     this.scanning = true;
     try {
       const files = collectYamlFiles(this.dir);
@@ -171,6 +172,7 @@ export class ConfigWatcher {
     } finally {
       this.scanning = false;
     }
+    return true;
   }
 
   listNames(): string[] {
@@ -263,6 +265,7 @@ export function parseModuleConfig(text: string, baseDir: string): ModuleConfig {
   const obj = raw as Record<string, unknown>;
   const name = obj.name;
   if (typeof name !== 'string' || name.length === 0) throw new Error('missing name (module name)');
+  if (name.includes(':')) throw new Error('module name must not contain ":" (reserved for event and array name separators): ' + name);
   const file = obj.file;
   if (typeof file !== 'string' || file.length === 0) {
     throw new Error(`module ${name} missing file (module program path)`);

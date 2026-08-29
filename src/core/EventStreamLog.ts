@@ -50,6 +50,10 @@ function fileNameFor(dir: string, base: string, day: string, seq: number, ext: s
   return path.join(dir, base + '.' + day + '.' + pad3(seq) + ext);
 }
 
+/** 已占用的日志文件路径：同一路径只允许一个 EventStreamLog 实例（多核心共享日志文件
+ *  会导致轮转序号竞争与互相覆盖）。实例 close() 后释放占用。 */
+const takenLogFiles = new Set<string>();
+
 export class EventStreamLog {
   private entries: LogEntry[] = [];
   private filePath?: string;
@@ -66,6 +70,13 @@ export class EventStreamLog {
     this.filePath = opts.filePath;
     this.consoleOut = opts.logToConsole ?? false;
     this.maxMemoryEntries = opts.maxMemoryEntries;
+    if (this.filePath) {
+      const abs = path.resolve(this.filePath);
+      if (takenLogFiles.has(abs)) {
+        throw new Error('log file already in use by another core instance: ' + abs);
+      }
+      takenLogFiles.add(abs);
+    }
   }
 
   /** 追加一条记录（先落内存再到磁盘，顺序一致）。内容完整，不做任何截断。 */
@@ -182,5 +193,8 @@ export class EventStreamLog {
       this.stream!.end(() => resolve());
     });
     this.stream = undefined;
+    if (this.filePath) {
+      takenLogFiles.delete(path.resolve(this.filePath));
+    }
   }
 }

@@ -19,6 +19,15 @@ import type { ConnectCore } from './ConnectCore';
 import type { ModuleManager } from './ModuleManager';
 import type { CoreEvent, DirectedMessage, ModuleSlot } from '../types';
 
+/** 深拷贝事件 data：每个接收者拿到独立副本。不可克隆的值（函数/符号）回退为原引用。 */
+function cloneData(data: unknown): unknown {
+  try {
+    return structuredClone(data);
+  } catch {
+    return data;
+  }
+}
+
 export class EventDispatcher {
   /** 事件比对索引：startEvents 与 listen 各自一份（配置变更时重建，模块启停不碰索引）。 */
   private readonly startIndex = new MatchIndex<ModuleSlot>();
@@ -108,11 +117,15 @@ export class EventDispatcher {
     return out.sort((a, b) => a.seq - b.seq);
   }
 
-  /** 逐个派发事件消息：单个模块失败只记 error 日志，不影响其他模块。 */
+  /** 逐个派发事件消息：单个模块失败只记 error 日志，不影响其他模块。
+   *  data 按接收者独立拷贝（structuredClone）：每个监听者拿到一份原始信息的副本，
+   *  修改自己的副本不影响其他监听者。data 只承载信息，可变共享数据走公共数组。
+   *  拷贝失败（不可克隆的值，如函数）时回退为原引用。 */
   private async deliverTo(recipients: ModuleSlot[], event: CoreEvent, failPrefix: string): Promise<void> {
     for (const m of recipients) {
       try {
-        await m.def!.onEvent!(m.ctx!, event);
+        const copy: CoreEvent = event.data === undefined ? event : { name: event.name, data: cloneData(event.data) };
+        await m.def!.onEvent!(m.ctx!, copy);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.core.writeLog(LOG_TYPES.ERROR, m.name, failPrefix + message, { event: event.name, error: message });

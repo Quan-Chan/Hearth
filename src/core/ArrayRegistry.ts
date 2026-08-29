@@ -10,6 +10,7 @@
  */
 
 import { eventMatches } from './EventMatcher';
+import { naturalCompare } from './ConfigWatcher';
 
 /** 三段式公共数组名的第一段：公共数组标记。 */
 export const ARRAY_KEY_PREFIX = 'public';
@@ -32,6 +33,9 @@ export class ArrayRegistry {
   expose(name: string, owner: string, items: unknown[] = []): void {
     if (typeof name !== 'string' || name.length === 0) {
       throw new Error('shared array name must be a non-empty string');
+    }
+    if (name.includes(':')) {
+      throw new Error('shared array name must not contain ":" (reserved for name separator): ' + name);
     }
     if (!Array.isArray(items)) {
       throw new Error(`shared array ${name} content must be an array`);
@@ -64,9 +68,13 @@ export class ArrayRegistry {
       return arr.items as T[];
     }
     const out: Record<string, T[]> = {};
-    for (const [key, arr] of this.map) {
-      if (eventMatches(pattern, key)) out[key] = arr.items as T[];
+    const keys: string[] = [];
+    for (const key of this.map.keys()) {
+      if (eventMatches(pattern, key)) keys.push(key);
     }
+    // 键按自然排序（与模块加载顺序同一规则），结果顺序稳定可预测
+    keys.sort(naturalCompare);
+    for (const key of keys) out[key] = this.map.get(key)!.items as T[];
     return out;
   }
 

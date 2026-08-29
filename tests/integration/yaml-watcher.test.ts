@@ -21,7 +21,7 @@ const LATE = `module.exports = {
 test('监听模块文件夹：新增 YAML 自动加载并注册，不补启动，手动启动后事件送达', async () => {
   const dir = mkTmpDir('watch');
   try {
-    const core = new ConnectCore({ moduleDir: dir, watch: true, pollIntervalMs: 50 });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 50 });
     await core.start();
     assert.equal(core.listModules().length, 0);
     // 放入新的 YAML 配置 + 程序（先写程序文件，避免加载竞态）
@@ -45,7 +45,7 @@ test('监听模块文件夹：新增 YAML 自动加载并注册，不补启动�
 test('新增模块：启动事件未发生过则不启动，事件到来时启动', async () => {
   const dir = mkTmpDir('watch');
   try {
-    const core = new ConnectCore({ moduleDir: dir, watch: true, pollIntervalMs: 50 });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 50 });
     await core.start();
     fs.writeFileSync(path.join(dir, 'late.cjs'), LATE);
     fs.writeFileSync(path.join(dir, 'late.yaml'), yamlFor('late', { startEvents: ['*:later:event'], listen: ['*:later:event'] }));
@@ -65,7 +65,7 @@ test('新增模块：启动事件未发生过则不启动，事件到来时启�
 test('YAML 变化：YAML 层热生效——索引即时更新，模块不重启、不重载代码', async () => {
   const dir = mkTmpDir('watch');
   try {
-    const core = new ConnectCore({ moduleDir: dir, watch: true, pollIntervalMs: 50 });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 50 });
     await core.start();
     const yamlPath = path.join(dir, 'greeter.yaml');
     fs.writeFileSync(path.join(dir, 'greeter.cjs'), GREETER);
@@ -94,7 +94,7 @@ test('YAML 变化：YAML 层热生效——索引即时更新，模块不重启�
 test('删除 YAML：模块被停止并移除', async () => {
   const dir = mkTmpDir('watch');
   try {
-    const core = new ConnectCore({ moduleDir: dir, watch: true, pollIntervalMs: 50 });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 50 });
     await core.start();
     fs.writeFileSync(path.join(dir, 'greeter.cjs'), GREETER);
     fs.writeFileSync(path.join(dir, 'greeter.yaml'), yamlFor('greeter', { startEvents: ['core:startup'] }));
@@ -114,7 +114,7 @@ test('删除 YAML：模块被停止并移除', async () => {
 test('非法 YAML：记录 config:error，核心继续运行', async () => {
   const dir = mkTmpDir('watch');
   try {
-    const core = new ConnectCore({ moduleDir: dir, watch: true, pollIntervalMs: 50 });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 50 });
     await core.start();
     fs.writeFileSync(path.join(dir, 'bad.yaml'), 'name: [unclosed\n');
     await waitFor(() => core.log.byType('error').filter((e) => String(e.message).includes('config parse failed')).length >= 1);
@@ -134,7 +134,7 @@ test('相同内容重写：只改 mtime 不触发 config-update（touch 假阳�
     const yaml = yamlFor('greeter', { startEvents: ['core:startup'], listen: ['*:greet'] });
     fs.writeFileSync(path.join(dir, 'greeter.cjs'), GREETER);
     fs.writeFileSync(yamlPath, yaml);
-    const core = new ConnectCore({ moduleDir: dir, watch: true, pollIntervalMs: 50 });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 50 });
     await core.start();
     assert.equal(core.getModule('greeter')!.status, 'running');
     // 用相同内容重写文件（touch）：指纹变化但哈希相同 -> 不得触发 config-update
@@ -156,7 +156,7 @@ test('快速连续改写：最终收敛到最新配置（YAML 层，不重启）
     const yamlPath = path.join(dir, 'greeter.yaml');
     fs.writeFileSync(path.join(dir, 'greeter.cjs'), GREETER);
     fs.writeFileSync(yamlPath, yamlFor('greeter', { startEvents: ['core:startup'], listen: ['*:greet'] }));
-    const core = new ConnectCore({ moduleDir: dir, watch: true, pollIntervalMs: 50 });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 50 });
     await core.start();
     assert.equal(core.getModule('greeter')!.status, 'running');
     // 连续两次改写：中间态可能被跳过，最终必须收敛到最新配置
@@ -178,7 +178,7 @@ test('快速连续改写：最终收敛到最新配置（YAML 层，不重启）
 test('watch:false 时不自动监听，rescanModules 手动扫描生效', async () => {
   const dir = mkTmpDir('watch');
   try {
-    const core = new ConnectCore({ moduleDir: dir, watch: false });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     fs.writeFileSync(path.join(dir, 'greeter.cjs'), GREETER);
     fs.writeFileSync(path.join(dir, 'greeter.yaml'), yamlFor('greeter', { startEvents: ['core:startup'] }));
@@ -226,7 +226,7 @@ test('模块改写自己的 YAML：listen 事件表变化，核心同步（不�
 `;
     fs.writeFileSync(path.join(dir, 'selfedit.cjs'), selfedit);
     fs.writeFileSync(path.join(dir, 'selfedit.yaml'), yamlFor('selfedit', { startEvents: ['core:startup'], listen: ['*:selfedit:add'] }));
-    const core = new ConnectCore({ moduleDir: dir, watch: true, pollIntervalMs: 40 });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 40 });
     await core.start();
     await waitFor(() => core.getModule('selfedit')?.status === 'running');
     assert.deepEqual(arr(core as any, 'public:selfedit:marks'), ['started']);
@@ -278,7 +278,7 @@ test('模块改写自己的 YAML：startEvents 变化，新的启动事件可自
 `;
     fs.writeFileSync(path.join(dir, 'bootcfg.cjs'), bootcfg);
     fs.writeFileSync(path.join(dir, 'bootcfg.yaml'), yamlFor('bootcfg', { startEvents: ['core:startup'], listen: ['*:bootcfg:config'] }));
-    const core = new ConnectCore({ moduleDir: dir, watch: true, pollIntervalMs: 40 });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 40 });
     await core.start();
     await waitFor(() => core.getModule('bootcfg')?.status === 'running');
     // 模块改写自己的 YAML：startEvents 增加 bootcfg:again

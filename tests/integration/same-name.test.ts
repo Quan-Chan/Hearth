@@ -37,7 +37,7 @@ test('同名模块：第二个文件被拒绝注册，先注册者保留，拒�
   try {
     fs.writeFileSync(path.join(dir, 'a.cjs'), IDENTITY_A);
     fs.writeFileSync(path.join(dir, 'a.yaml'), 'name: identity\nfile: ./a.cjs\nstartEvents:\n  - "core:startup"\nlisten:\n  - "*:same:ping"\n');
-    const core = new ConnectCore({ moduleDir: dir, watch: false });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     assert.equal(core.listModules().length, 1);
     assert.equal(core.getModule('identity')!.status, 'running');
@@ -63,7 +63,7 @@ test('同名模块：先注册者消失后，被拒者获得注册资格（让�
   try {
     fs.writeFileSync(path.join(dir, 'a.cjs'), IDENTITY_A);
     fs.writeFileSync(path.join(dir, 'a.yaml'), 'name: identity\nfile: ./a.cjs\nstartEvents:\n  - "core:startup"\n');
-    const core = new ConnectCore({ moduleDir: dir, watch: false });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     assert.equal(core.listModules().length, 1);
 
@@ -90,7 +90,7 @@ test('同名模块：同文件更新不受影响，仍正常应用', async () =>
   try {
     fs.writeFileSync(path.join(dir, 'u.cjs'), IDENTITY_UPDATE);
     fs.writeFileSync(path.join(dir, 'u.yaml'), 'name: identity\nfile: ./u.cjs\nstartEvents:\n  - "core:startup"\nlisten:\n  - "*:same:ping"\n');
-    const core = new ConnectCore({ moduleDir: dir, watch: false });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
 
     fs.writeFileSync(path.join(dir, 'u.yaml'), 'name: identity\nfile: ./u.cjs\nstartEvents:\n  - "core:startup"\nlisten:\n  - "*:same:ping"\n  - "*:same:ping2"\n');

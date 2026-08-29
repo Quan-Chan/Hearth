@@ -100,7 +100,7 @@ test('定向消息：模块直发模块，onMessage 收 source+内容，可回�
     fs.writeFileSync(path.join(dir, 'sender.yaml'), yamlFor('sender', { startEvents: ['core:startup'], listen: ['*:go1'] }));
     fs.writeFileSync(path.join(dir, 'deaf.cjs'), DEAF_CJS);
     fs.writeFileSync(path.join(dir, 'deaf.yaml'), yamlFor('deaf', { startEvents: ['core:startup'] }));
-    const core = new ConnectCore({ moduleDir: dir, watch: false });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
 
     await core.sendEvent('go1');
@@ -126,7 +126,7 @@ test('核心可寻址：sendTo(' + "'" + 'core' + "'" + ', {cmd}) 执行并通�
   try {
     fs.writeFileSync(path.join(dir, 'commander.cjs'), COMMANDER_CJS);
     fs.writeFileSync(path.join(dir, 'commander.yaml'), yamlFor('commander', { startEvents: ['core:startup'], listen: ['*:ask-state', '*:ask-bad'] }));
-    const core = new ConnectCore({ moduleDir: dir, watch: false });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
 
     await core.sendEvent('ask-state');
@@ -157,7 +157,7 @@ test('多模块同时请求核心：各收各的结果，互不串扰（直回�
     fs.writeFileSync(path.join(dir, 'beta.yaml'), yamlFor('beta', { startEvents: ['core:startup'], listen: ['*:both-fire'] }));
     fs.writeFileSync(path.join(dir, 'sink.cjs'), SINK_CJS);
     fs.writeFileSync(path.join(dir, 'sink.yaml'), yamlFor('sink', { startEvents: ['core:startup'], listen: ['*:alpha-fire', '*:beta-fire'] }));
-    const core = new ConnectCore({ moduleDir: dir, watch: false });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
 
     await core.sendEvent('both-fire');
@@ -204,7 +204,7 @@ test('同一事件多个监听者：按加载顺序逐个收到（前面阻塞�
     fs.writeFileSync(path.join(dir, 'slow.yaml'), yamlFor('slow', { startEvents: ['core:startup'], listen: ['*:go'] }));
     fs.writeFileSync(path.join(dir, 'a.cjs'), a);
     fs.writeFileSync(path.join(dir, 'a.yaml'), yamlFor('a', { startEvents: ['core:startup'], listen: ['*:go'] }));
-    const core = new ConnectCore({ moduleDir: dir, watch: false });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     // 监听顺序：slow 先注册（s < a 字母序），再 a
     await core.sendEvent('go');
@@ -224,7 +224,7 @@ test('监听者处理抛错被隔离：只记 error，后续监听者仍收到',
     fs.writeFileSync(path.join(dir, 'bad.yaml'), yamlFor('bad', { startEvents: ['core:startup'], listen: ['*:go'] }));
     fs.writeFileSync(path.join(dir, 'ok.cjs'), ok);
     fs.writeFileSync(path.join(dir, 'ok.yaml'), yamlFor('ok', { startEvents: ['core:startup'], listen: ['*:go'] }));
-    const core = new ConnectCore({ moduleDir: dir, watch: false });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     await core.sendEvent('go');
     await waitFor(() => arr(core as any, 'public:ok:order').length === 1);
@@ -242,7 +242,7 @@ test('sendTo 目标存在但 onMessage 抛错：返回 true（存在即送达）
     const thrower = `module.exports = { name: 'thrower', start(ctx) { ctx.exposeArray('marks', []); }, onMessage() { throw new Error('接收方处理失败'); } };`;
     fs.writeFileSync(path.join(dir, 'thrower.cjs'), thrower);
     fs.writeFileSync(path.join(dir, 'thrower.yaml'), yamlFor('thrower', { startEvents: ['core:startup'] }));
-    const core = new ConnectCore({ moduleDir: dir, watch: false });
+    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     // 目标存在且实现 onMessage：即使抛错也返回 true
     const delivered = await core.sendTo('thrower', { x: 1 }, 'tester');

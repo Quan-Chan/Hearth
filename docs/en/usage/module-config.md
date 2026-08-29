@@ -6,7 +6,7 @@ A module consists of a YAML configuration file and a program file. YAML declares
 
 | Field | Default | Description |
 | --- | --- | --- |
-| name | required | Module name, globally unique; also the source of the event source segment and the second segment of the array name |
+| name | required | Module name, globally unique; also the source of the event source segment and the second segment of the array name; must not contain ":" |
 | file | required | Program file path, relative to the directory containing the YAML; may point outside the module folder |
 | startEvents | none | List of event patterns; the core starts the module when one of these events occurs |
 | listen | none | List of event patterns; the core forwards events to the module when one of these events occurs |

@@ -54,7 +54,7 @@ onEvent(ctx, event) {
 }
 \`\`\`
 
-Listeners receive events one by one in load order; a single module's handling failure does not affect other modules.
+Listeners receive events one by one in load order; a single module's handling failure does not affect other modules. Each listener receives an independent deep copy of data: modifying one's own copy does not affect other listeners. data carries information only; mutable shared data belongs in shared arrays.
 
 ## Event Dropping
 

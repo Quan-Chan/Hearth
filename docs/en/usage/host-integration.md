@@ -32,7 +32,7 @@ The core section of the root config file connect-core.yaml can write the same fi
 
 Lifecycle: start(), stop(), started.
 
-Module management: startModule(name, reason?), stopModule(name), reloadModule(name), rescanModules().
+Module management: startModule(name, reason?), stopModule(name), reloadModule(name), rescanModules() (returns whether a scan actually ran; false when stopping or when the previous scan is still in progress).
 
 Events and messages: sendEvent(name, data?, source?) produces an event; sendTo(target, data?, source?) sends point-to-point; sendDirected(targets, name, data?, source?) delivers an event directly to the specified targets or broadcasts to all; targets need not declare listening, and no start-event matching is performed (the underlying capability of the CLI send instruction).
 

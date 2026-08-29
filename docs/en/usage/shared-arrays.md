@@ -10,7 +10,7 @@ Full name = public:module-name:array-name:
 - Second segment: owner module name, assembled automatically by the core
 - Third segment: the name the module gives the array when exposing
 
-When exposing and unexposing, modules only provide the third segment.
+When exposing and unexposing, modules only provide the third segment. The array name (third segment) must not contain ":" (colon is the name separator).
 
 ## Exposing
 
@@ -34,7 +34,7 @@ const marks = ctx.array('public:greeter:marks');
 // Exact: own array by third-segment short name (first two segments completed automatically)
 const own = ctx.array('marks');
 
-// Wildcard: returns a mapping of full array name to reference
+// Wildcard: returns a mapping of full array name to reference (keys in natural sort order, same rule as module load order)
 const all = ctx.array('public:greeter:*');
 \`\`\`
 

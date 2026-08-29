@@ -180,10 +180,11 @@ export class ConnectCore {
     await this.log.close();
   }
 
-  /** 立即重新扫描模块文件夹（测试/管理用）。 */
-  async rescanModules(): Promise<void> {
-    if (this.stoppingFlag) return;
-    await this.watcher?.rescan();
+  /** 立即重新扫描模块文件夹（测试/管理用）。返回是否真正执行了扫描
+   *  （false = 停机中或上一次扫描仍在进行中，本次调用被跳过）。 */
+  async rescanModules(): Promise<boolean> {
+    if (!this.startedFlag || this.stoppingFlag) return false;
+    return (await this.watcher?.rescan()) ?? false;
   }
 
   // ==================== 框架核心方法（委托） ====================
