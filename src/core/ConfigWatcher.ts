@@ -178,6 +178,45 @@ export class ConfigWatcher {
   }
 }
 
+/** 自然排序比较器（对标 Windows 资源管理器的 StrCmpLogicalW）：
+ *  - 连续数字按数值比较（m2 排在 m10 前），数字不是按字符逐位比较；
+ *  - 非数字段按字典序比较，大小写不敏感（a 与 A 视为相等，保持稳定顺序）；
+ *  - 稳定：相等键保持原有相对顺序（V8 的 Array.sort 自 ES2019 起保证稳定）。
+ *  用于模块文件夹/文件的扫描排序，保证模块加载顺序确定且符合直觉。 */
+export function naturalCompare(a: string, b: string): number {
+  const ra = /(\d+)|(\D+)/g;
+  const rb = /(\d+)|(\D+)/g;
+  let ma: RegExpExecArray | null;
+  let mb: RegExpExecArray | null;
+  for (;;) {
+    ma = ra.exec(a);
+    mb = rb.exec(b);
+    const ta = ma ? ma[0] : '';
+    const tb = mb ? mb[0] : '';
+    if (!ta && !tb) return 0;
+    if (!ta) return -1;
+    if (!tb) return 1;
+    const da = /^\d+$/.test(ta);
+    const db = /^\d+$/.test(tb);
+    if (da && db) {
+      // 数字段按数值比较；数值相等时按长度（前导零场景，如 01 vs 1）
+      const na = BigInt(ta);
+      const nb = BigInt(tb);
+      if (na !== nb) return na < nb ? -1 : 1;
+      if (ta.length !== tb.length) return ta.length < tb.length ? -1 : 1;
+    } else if (da !== db) {
+      // 数字段排在字符段前（与资源管理器一致）
+      return da ? -1 : 1;
+    } else {
+      // 字符段：大小写不敏感比较
+      const la = ta.toLowerCase();
+      const lb = tb.toLowerCase();
+      if (la !== lb) return la < lb ? -1 : 1;
+      // 大小写视为相等：稳定排序保持原顺序（此处返回 0）
+    }
+  }
+}
+
 /** 收集模块 YAML（不递归）：只识别两层——模块目录顶层直接放的 YAML，以及『每个模块
  * 一个子文件夹』（modules/<name>/）里直接放的 YAML。不再递归深入任意子目录：
  * 递归会把模块内部嵌套的子核心/子模块配置文件误认成本核心的模块，造成不可预测的文件冲突。
@@ -186,7 +225,7 @@ function collectYamlFiles(dir: string): string[] {
   const out: string[] = [];
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    entries = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => naturalCompare(a.name, b.name));
   } catch {
     return out;
   }
@@ -198,7 +237,7 @@ function collectYamlFiles(dir: string): string[] {
       if (ent.name === 'node_modules' || ent.name.startsWith('.')) continue;
       let sub: fs.Dirent[];
       try {
-        sub = fs.readdirSync(p, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+        sub = fs.readdirSync(p, { withFileTypes: true }).sort((a, b) => naturalCompare(a.name, b.name));
       } catch {
         continue;
       }
