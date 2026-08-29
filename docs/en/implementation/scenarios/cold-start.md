@@ -6,7 +6,7 @@ The host calls startCore(options), or createCore followed by start(); the core s
 
 1. Construct the core, resolve option defaults, create the log.
 2. start() sets the started flag, installs the process guard when guardProcess is enabled, logs core-start.
-3. ConfigWatcher scans the module directory for the first time: collects YAML from two levels in natural sort order (digits by numeric value, characters lexicographically, case-insensitive), registers each, rebuilds both indexes, logs config-load. Duplicate names are rejected and logged as error.
+3. ConfigWatcher scans the module directory for the first time: collects YAML from two levels in natural sort order (digits by numeric value, characters lexicographically, case-sensitive), registers each, rebuilds both indexes, logs config-load. Duplicate names are rejected and logged as error.
 4. Broadcast core:startup: matched not-running modules start one by one in load order.
 5. Each module starts:
    - Set starting, load the program from disk, construct the context

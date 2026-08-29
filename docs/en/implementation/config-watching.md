@@ -10,7 +10,7 @@ Each round, every file is first compared by stat fingerprint (mtimeMs, size, cti
 
 ## Directory rules
 
-Only two levels are collected: YAML files placed directly at the top level of the module folder, and YAML files placed directly inside one subfolder per module. node_modules and hidden directories are skipped. Collection order follows natural sort (like Windows Explorer): consecutive digits compare by numeric value (m2 comes before m10), non-digit segments compare lexicographically (case-insensitive), and the sort is stable. In the subfolder layout, order is by folder name; in the flat layout, order is by file name including extension; the subfolder layout is recommended.
+Only two levels are collected: YAML files placed directly at the top level of the module folder, and YAML files placed directly inside one subfolder per module. node_modules and hidden directories are skipped. Collection order follows natural sort (like Windows Explorer): consecutive digits compare by numeric value (m2 comes before m10), non-digit segments compare lexicographically (case-sensitive, uppercase first, e.g. Greeter before greeter). Case sensitivity guarantees no ties, so the load order is fully deterministic. In the subfolder layout, order is by folder name; in the flat layout, order is by file name including extension; the subfolder layout is recommended.
 
 ## Fault tolerance
 

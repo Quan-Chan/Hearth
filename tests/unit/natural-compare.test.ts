@@ -5,7 +5,7 @@ import { naturalCompare } from '../../src/core/ConfigWatcher';
 /**
  * 自然排序比较器（对标 Windows 资源管理器 StrCmpLogicalW）：
  *  - 数字按数值比较（m2 排在 m10 前），不是按字符逐位比较；
- *  - 大小写不敏感（相等键保持稳定顺序）；
+ *  - 大小写敏感（大写字母在前，Greeter 在 greeter 前，无平局）；
  *  - 数字段排在字符段前。
  */
 
@@ -23,13 +23,10 @@ test('混合名称：字符段字典序 + 数字段数值', () => {
   assert.deepEqual(sorted(['a10', 'a2', 'b1', 'a1']), ['a1', 'a2', 'a10', 'b1']);
 });
 
-test('大小写不敏感：相同键保持稳定顺序', () => {
-  // 输入顺序固定：Alpha 先于 alpha，比较后视为相等 -> 保持原顺序（稳定）
-  const names = ['alpha', 'Alpha', 'ALPHA'];
-  const result = sorted(names);
-  assert.equal(result.length, 3);
-  // 三者视为相等键，稳定排序保持输入相对顺序
-  assert.deepEqual(result, ['alpha', 'Alpha', 'ALPHA']);
+test('大小写敏感：大写字母在前，排序确定', () => {
+  // 码点：A(0x41) < a(0x61)，大小写敏感后顺序完全确定
+  assert.deepEqual(sorted(['alpha', 'Alpha', 'ALPHA']), ['ALPHA', 'Alpha', 'alpha']);
+  assert.deepEqual(sorted(['greeter', 'Greeter']), ['Greeter', 'greeter']);
 });
 
 test('数字段排在字符段前', () => {

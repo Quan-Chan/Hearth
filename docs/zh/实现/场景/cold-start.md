@@ -6,7 +6,7 @@
 
 1. 构造核心，解析选项默认值，创建日志。
 2. start() 置 started 标志，guardProcess 开启时安装进程守卫，记 core-start 日志。
-3. ConfigWatcher 首次扫描模块目录：按自然排序收集两层 YAML（数字按数值、字符按字典序、大小写不敏感），逐个注册、重建两套索引，记 config-load。同名冲突拒绝并记 error。
+3. ConfigWatcher 首次扫描模块目录：按自然排序收集两层 YAML（数字按数值、字符按字典序、大小写敏感），逐个注册、重建两套索引，记 config-load。同名冲突拒绝并记 error。
 4. 广播 core:startup：命中的未运行模块按加载顺序逐个启动。
 5. 每个模块启动：
    - 置 starting，从磁盘加载程序，构造上下文

@@ -180,8 +180,9 @@ export class ConfigWatcher {
 
 /** 自然排序比较器（对标 Windows 资源管理器的 StrCmpLogicalW）：
  *  - 连续数字按数值比较（m2 排在 m10 前），数字不是按字符逐位比较；
- *  - 非数字段按字典序比较，大小写不敏感（a 与 A 视为相等，保持稳定顺序）；
- *  - 稳定：相等键保持原有相对顺序（V8 的 Array.sort 自 ES2019 起保证稳定）。
+ *  - 非数字段按字典序比较，大小写敏感（大写字母在前，如 Greeter 在 greeter 前）；
+ *  - 大小写敏感保证排序键无平局：模块名完全相同时才返回 0，而完全同名已被重名检测拒绝，
+ *    因此加载顺序完全确定，不依赖文件系统遍历顺序或创建时间。
  *  用于模块文件夹/文件的扫描排序，保证模块加载顺序确定且符合直觉。 */
 export function naturalCompare(a: string, b: string): number {
   const ra = /(\d+)|(\D+)/g;
@@ -208,11 +209,8 @@ export function naturalCompare(a: string, b: string): number {
       // 数字段排在字符段前（与资源管理器一致）
       return da ? -1 : 1;
     } else {
-      // 字符段：大小写不敏感比较
-      const la = ta.toLowerCase();
-      const lb = tb.toLowerCase();
-      if (la !== lb) return la < lb ? -1 : 1;
-      // 大小写视为相等：稳定排序保持原顺序（此处返回 0）
+      // 字符段：大小写敏感，直接按码点比较（大写字母在前）
+      if (ta !== tb) return ta < tb ? -1 : 1;
     }
   }
 }
