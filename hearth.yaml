@@ -1,0 +1,6 @@
+core:
+  moduleDir: ./modules
+  logFile: ./logs/event-stream.log
+  watch: true
+  pollIntervalMs: 200
+  logToConsole: false

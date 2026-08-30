@@ -21,4 +21,4 @@ When it is not enabled, unhandled async failures inside modules kill the process
 
 ## Shutdown freeze
 
-Once stoppingFlag is set: external events, directed messages, and config changes are all rejected; during shutdown, module calls to the send interfaces throw a "Connect-Core is stopping" error. The file surface is frozen by watcher.stop(), preventing new config from being loaded mid-shutdown.
+Once stoppingFlag is set: external events, directed messages, and config changes are all rejected; during shutdown, module calls to the send interfaces throw a "Hearth is stopping" error. The file surface is frozen by watcher.stop(), preventing new config from being loaded mid-shutdown.

@@ -1,4 +1,4 @@
-# Connect-Core Requirements
+# Hearth Requirements
 
 ## 1. Software form
 

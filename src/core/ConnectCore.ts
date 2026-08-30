@@ -1,5 +1,5 @@
 /**
- * Connect-Core 核心：框架的中间层，同时是软件的核心层。
+ * Hearth 核心：框架的中间层，同时是软件的核心层。
  *
  * 职责（对应 docs/需求.md 的框架核心方法）：
  *   1. 启动模块        -> startModule（委托 ModuleManager）
@@ -117,12 +117,12 @@ export class ConnectCore {
     const fmt = (e: unknown): string => (e instanceof Error ? (e.stack ?? e.message) : String(e));
     process.on('unhandledRejection', (reason) => {
       const text = 'caught unhandled async failure (Promise): ' + fmt(reason);
-      if (ConnectCore.guardedCores.size === 0) console.error('[connect-core] ' + text);
+      if (ConnectCore.guardedCores.size === 0) console.error('[hearth] ' + text);
       for (const core of ConnectCore.guardedCores) core.writeLog(LOG_TYPES.ERROR, 'core', text);
     });
     process.on('uncaughtException', (err) => {
       const text = 'caught uncaught exception (process continues): ' + fmt(err);
-      if (ConnectCore.guardedCores.size === 0) console.error('[connect-core] ' + text);
+      if (ConnectCore.guardedCores.size === 0) console.error('[hearth] ' + text);
       for (const core of ConnectCore.guardedCores) core.writeLog(LOG_TYPES.ERROR, 'core', text);
     });
   }
@@ -130,7 +130,7 @@ export class ConnectCore {
   // ==================== 生命周期：启动核心 == 启动整个软件 ====================
 
   async start(): Promise<void> {
-    if (this.startedFlag) throw new Error('Connect-Core already started, do not start twice');
+    if (this.startedFlag) throw new Error('Hearth already started, do not start twice');
     this.startedFlag = true;
     if (this.options.guardProcess) {
       ConnectCore.guardedCores.add(this);
@@ -149,7 +149,6 @@ export class ConnectCore {
         onRemove: (name) => this.handleConfigRemove(name),
         onError: (name, message) =>
           this.writeLog(LOG_TYPES.ERROR, name, `config parse failed: ${message}`, {
-            module: name,
             error: message,
           }),
       },
@@ -244,13 +243,12 @@ export class ConnectCore {
       const existing = this.manager.getSlot(cfg.name)!;
       this.writeLog(LOG_TYPES.ERROR, cfg.name,
         `config load rejected: module name ${cfg.name} already registered by ${existing.yamlPath} (duplicate module names not allowed)`,
-        { module: cfg.name, file: cfg.file, conflict: existing.yamlPath },
+        { file: cfg.file, conflict: existing.yamlPath },
       );
       return false;
     }
     this.dispatcher.rebuildIndexes(this.manager.slots());
-    this.writeLog(LOG_TYPES.CONFIG_LOAD, cfg.name, `config loaded: ${cfg.name}`, {
-      module: cfg.name,
+    this.writeLog(LOG_TYPES.CONFIG_LOAD, cfg.name, 'config loaded', {
       file: cfg.file,
     });
     return true;
@@ -272,15 +270,14 @@ export class ConnectCore {
     if (prev && prev.yamlPath !== yamlPath) {
       this.writeLog(LOG_TYPES.ERROR, cfg.name,
         `config update rejected: module name ${cfg.name} occupied by ${prev.yamlPath} (duplicate module names not allowed)`,
-        { module: cfg.name, file: cfg.file, conflict: prev.yamlPath },
+        { file: cfg.file, conflict: prev.yamlPath },
       );
       return false;
     }
     const wasRunning = prev?.status === 'running';
     await this.manager.applyUpdate(cfg, yamlPath);
     this.dispatcher.rebuildIndexes(this.manager.slots());
-    this.writeLog(LOG_TYPES.CONFIG_UPDATE, cfg.name, `config updated: ${cfg.name} (YAML layer only, module instance and code unchanged)`, {
-      module: cfg.name,
+    this.writeLog(LOG_TYPES.CONFIG_UPDATE, cfg.name, 'config updated (YAML layer only, module instance and code unchanged)', {
       file: cfg.file,
     });
     if (wasRunning && cfg.enabled === false) {
@@ -295,7 +292,7 @@ export class ConnectCore {
     if (!this.manager.getSlot(name)) return;
     await this.manager.remove(name);
     this.dispatcher.rebuildIndexes(this.manager.slots());
-    this.writeLog(LOG_TYPES.CONFIG_REMOVE, name, `config removed: ${name}`, { module: name });
+    this.writeLog(LOG_TYPES.CONFIG_REMOVE, name, 'config removed');
   }
 
   // ==================== 公共数组（映射关系） ====================
@@ -342,8 +339,6 @@ export class ConnectCore {
 
   /** 模块自有日志（模块显式请求核心记录，type=module-log）。 */
   logModule(moduleName: string, ...parts: unknown[]): void {
-    this.writeLog(LOG_TYPES.MODULE_LOG, moduleName, parts.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join(' '), {
-      module: moduleName,
-    });
+    this.writeLog(LOG_TYPES.MODULE_LOG, moduleName, parts.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join(' '));
   }
 }

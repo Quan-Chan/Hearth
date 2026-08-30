@@ -101,6 +101,12 @@ function helpText() {
 
 /** 指令分发：只整理参数直接发给核心（信息直达），结果异步回来后 onMessage 展示。 */
 function run(ctx, line) {
+  // 彩蛋：输入 "I'm angry"（大小写不敏感；i'm/im、空格可有可无、标点可省略或多余）在日志写一条 angry!
+  if (/^i['’]?m\s*angry[.,!?;:]*$/i.test(line.trim())) {
+    ctx.log('angry!');
+    console.log('angry!');
+    return;
+  }
   const parts = line.split(/\s+/);
   const cmd = parts[0];
   switch (cmd) {
@@ -170,7 +176,7 @@ module.exports = {
       rl.prompt();
     });
     rl.on('close', () => process.exit(0)); // 管道 EOF / Ctrl+C 直接结束
-    // 首个提示符延到本轮事件循环末尾：先让核心启动横幅（connect-core.ts 在 core.start() 之后打印）
+    // 首个提示符延到本轮事件循环末尾：先让核心启动横幅（hearth.ts 在 core.start() 之后打印）
     // 全部打完，> 提示符才出现在最下面——否则会被横幅挤到上面，一进去看不到箭头。
     setImmediate(() => rl.prompt());
   },

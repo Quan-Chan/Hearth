@@ -1,6 +1,6 @@
 # Implementation Documentation
 
-This document describes how each Connect-Core feature is implemented. It is intended for maintainers.
+This document describes how each Hearth feature is implemented. It is intended for maintainers.
 
 ## Core components
 

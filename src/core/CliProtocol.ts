@@ -80,7 +80,7 @@ export class CliProtocol {
     const cmd = String(data.cmd ?? '');
     const args = (data.args ?? {}) as Record<string, unknown>;
     const from = message.source;
-    this.core.writeLog(LOG_TYPES.CLI_COMMAND, from, 'CLI command: ' + cmd, { command: cmd });
+    this.core.writeLog(LOG_TYPES.CLI_COMMAND, from, 'CLI command: ' + cmd);
 
     // 结束指令：先把完成信息直接回传发起方，再停核心（先交付结果再关闭）
     if (cmd === 'exit' || cmd === 'quit') {
@@ -98,9 +98,7 @@ export class CliProtocol {
     } catch (err) {
       result.ok = false;
       result.error = err instanceof Error ? err.message : String(err);
-      this.core.writeLog(LOG_TYPES.ERROR, 'core', 'CLI command failed: ' + (err instanceof Error ? err.message : String(err)), {
-        command: cmd,
-      });
+      this.core.writeLog(LOG_TYPES.ERROR, 'core', 'CLI command failed: ' + (err instanceof Error ? err.message : String(err)));
     }
     // 结果直接回传发起方（定向信息，不进任何数组）
     await this.core.sendTo(from, result as Record<string, unknown>, 'core');

@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](../../en/usage/README.md)
 
-本文档描述 Connect-Core 提供给模块编写者与宿主集成者的全部功能。
+本文档描述 Hearth 提供给模块编写者与宿主集成者的全部功能。
 
 ## 模块是什么
 

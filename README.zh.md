@@ -1,10 +1,10 @@
-# Connect-Core
+# Hearth
 
 [English](README.md) | [中文](README.zh.md)
 
 **版本 0.1.0（预发布）**
 
-Connect-Core 是一个事件驱动的模块化框架核心，运行在 Node.js 上，使用 TypeScript 编写。
+Hearth 是一个事件驱动的模块化框架核心，运行在 Node.js 上，使用 TypeScript 编写。
 
 软件由核心与模块组成。核心的职责：
 
@@ -29,7 +29,7 @@ npm install
 npm run build
 ```
 
-命令行启动（读取根目录 connect-core.yaml）：
+命令行启动（读取根目录 hearth.yaml）：
 
 ```bash
 npm start

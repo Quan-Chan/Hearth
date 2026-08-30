@@ -1,8 +1,8 @@
 /**
- * Connect-Core 启动入口：命令行启动方式。
+ * Hearth 启动入口：命令行启动方式。
  *
  * 执行逻辑：
- *  1. 读配置：默认取命令行第 2 个参数或当前目录 connect-core.yaml；
+ *  1. 读配置：默认取命令行第 2 个参数或当前目录 hearth.yaml；
  *     有则解析出 core 段的启动选项，没有则全部走默认值。
  *  2. 启动核心（startCore）：核心扫描模块目录、发出 core:startup，
  *     所有依赖该事件的模块自动启动——到这步，软件已经运行。
@@ -10,8 +10,8 @@
  *     永不触发的定时器占住事件循环，让进程活到用户主动关闭。
  *  4. 收尾：SIGINT / SIGTERM 时正常关闭——核心并行停止全部模块（各自 stop() 收尾）、落盘日志、退出。
  *
- * 用法：node dist/connect-core.js [connect-core.yaml]
- * 配置示例（connect-core.yaml）：
+ * 用法：node dist/hearth.js [hearth.yaml]
+ * 配置示例（hearth.yaml）：
  *   core:
  *     moduleDir: ./modules        # 模块（YAML 配置）所在目录
  *     logFile: ./logs/event-stream.log
@@ -24,7 +24,7 @@ import { startCore } from './index';
 import type { ConnectCoreOptions } from './types';
 
 async function main(): Promise<void> {
-  const configPath = path.resolve(process.argv[2] ?? 'connect-core.yaml');
+  const configPath = path.resolve(process.argv[2] ?? 'hearth.yaml');
   const options: ConnectCoreOptions = {};
   if (fs.existsSync(configPath)) {
     const raw = parseYaml(fs.readFileSync(configPath, 'utf8')) as Record<string, any> | null;
@@ -37,23 +37,23 @@ async function main(): Promise<void> {
     if (coreCfg.watch !== undefined) options.watch = Boolean(coreCfg.watch);
     if (coreCfg.logToConsole) options.logToConsole = true;
     // eslint-disable-next-line no-console
-    console.log(`[connect-core] loaded config file: ${configPath}`);
+    console.log(`[hearth] loaded config file: ${configPath}`);
   } else {
     // eslint-disable-next-line no-console
-    console.log(`[connect-core] config file not found: ${configPath}, using defaults`);
+    console.log(`[hearth] config file not found: ${configPath}, using defaults`);
   }
 
   const core = await startCore(options);
 
   // eslint-disable-next-line no-console
-  console.log('[connect-core] core started');
+  console.log('[hearth] core started');
   // eslint-disable-next-line no-console
-  console.log(`[connect-core] module dir: ${core.options.moduleDir}`);
+  console.log(`[hearth] module dir: ${core.options.moduleDir}`);
   // eslint-disable-next-line no-console
-  console.log(`[connect-core] log file: ${core.options.logFile}`);
+  console.log(`[hearth] log file: ${core.options.logFile}`);
   // eslint-disable-next-line no-console
   console.log(
-    '[connect-core] loaded modules: ' +
+    '[hearth] loaded modules: ' +
       (core.listModules().map((m) => m.name).join(', ') || '(none)'),
   );
 
@@ -63,7 +63,7 @@ async function main(): Promise<void> {
 
   const shutdown = async (): Promise<void> => {
     // eslint-disable-next-line no-console
-    console.log('[connect-core] shutting down...');
+    console.log('[hearth] shutting down...');
     await core.stop();
     process.exit(0);
   };
@@ -74,6 +74,6 @@ async function main(): Promise<void> {
 // 启动失败也要干净退出并给出可诊断的报错，而不是挂在半初始化的状态。
 main().catch((err: Error) => {
   // eslint-disable-next-line no-console
-  console.error('[connect-core] startup failed:', err.message);
+  console.error('[hearth] startup failed:', err.message);
   process.exit(1);
 });

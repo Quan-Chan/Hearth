@@ -1,4 +1,4 @@
-# Connect-Core Scenarios
+# Hearth Scenarios
 
 Scenarios describe the actual sequences of behavior that occur while the software runs. Scenarios cover three areas: startup, forwarding, sharing.
 

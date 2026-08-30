@@ -1,10 +1,10 @@
-# Connect-Core
+# Hearth
 
 [English](README.md) | [中文](README.zh.md)
 
 **Version 0.1.0 (pre-release)**
 
-Connect-Core is an event-driven modular framework core running on Node.js, written in TypeScript.
+Hearth is an event-driven modular framework core running on Node.js, written in TypeScript.
 
 The software consists of a core and modules. The core is responsible for:
 
@@ -29,7 +29,7 @@ npm install
 npm run build
 ```
 
-Start from the command line (reads `connect-core.yaml` from the root):
+Start from the command line (reads `hearth.yaml` from the root):
 
 ```bash
 npm start

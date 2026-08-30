@@ -5,7 +5,7 @@
 
 ## 项目概览
 
-Connect-Core 是一个事件驱动的模块化框架核心，运行在 Node.js 上，使用 TypeScript 编写，版本 0.1.0（预发布）。
+Hearth 是一个事件驱动的模块化框架核心，运行在 Node.js 上，使用 TypeScript 编写，版本 0.1.0（预发布）。
 
 软件由核心与模块组成：
 
@@ -32,7 +32,7 @@ Connect-Core 是一个事件驱动的模块化框架核心，运行在 Node.js �
 仓库被克隆到本地后呈现的结构如下：
 
 ```
-Connect-Core/
+Hearth/
 ├── src/                      # TypeScript 源码
 │   ├── core/                 # 核心实现
 │   │   ├── ConnectCore.ts    # 主类：生命周期/配置热加载/数组API/查询，委托下两者
@@ -48,7 +48,7 @@ Connect-Core/
 │   │   └── logFormat.ts      # 日志类型/格式/展示截断
 │   ├── module/loadModule.ts  # 模块程序加载器（CJS/ESM/工厂函数）
 │   ├── index.ts              # 公共导出（createCore/startCore 等）
-│   ├── connect-core.ts       # 命令行入口
+│   ├── hearth.ts             # 命令行入口
 │   └── types.ts              # 共享类型定义
 ├── tests/                    # 测试（100 个）
 │   ├── unit/                 # 单元测试（组件级）
@@ -73,7 +73,7 @@ Connect-Core/
 ├── package-lock.json         # 依赖锁定
 ├── tsconfig.json             # 编译配置（src -> dist）
 ├── tsconfig.test.json        # 测试编译配置（src+tests -> .test-build）
-├── connect-core.yaml         # 命令行启动的默认配置
+├── hearth.yaml         # 命令行启动的默认配置
 ├── README.md                 # 英文介绍（默认）
 ├── README.zh.md              # 中文介绍
 ├── LICENSE                   # Apache-2.0

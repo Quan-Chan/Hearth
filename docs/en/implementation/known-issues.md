@@ -67,7 +67,7 @@ Source (old behavior):
 
 Symptom:
 
-- Between the start and the end of stop(), a module or the host calling the send interfaces receives a "Connect-Core is stopping" exception
+- Between the start and the end of stop(), a module or the host calling the send interfaces receives a "Hearth is stopping" exception
 - Call points that do not catch this exception throw errors in a cluster during the shutdown phase
 
 Source:

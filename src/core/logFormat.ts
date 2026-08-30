@@ -80,10 +80,6 @@ export function formatLogEntry(entry: LogEntry): string {
   const t = (entry.t ?? '').slice(11, 23);
   let line = t + ' [' + entry.type + '] ' + entry.source + ': ' + entry.message;
   const extra: string[] = [];
-  // event/event-drop 的 message 就是事件名，不再重复显示 event 字段
-  if (entry.event !== undefined && entry.type !== LOG_TYPES.EVENT && entry.type !== LOG_TYPES.EVENT_DROP) {
-    extra.push('event=' + entry.event);
-  }
   if (Array.isArray(entry.recipients) && entry.recipients.length > 0) {
     extra.push('recipients=' + entry.recipients.join(','));
   }

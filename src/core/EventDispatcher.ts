@@ -54,10 +54,10 @@ export class EventDispatcher {
    *  事件为两段式：事件名 = 来源:事件名，来源段由这里按调用方自动拼装；
    *  调用方（模块 ctx.sendEvent / 核心自产 / 宿主）只负责给事件名段与内容 data。 */
   async sendEvent(name: string, data?: unknown, source: string = 'external'): Promise<void> {
-    if (!this.core.started) throw new Error('Connect-Core not started, cannot send event');
+    if (!this.core.started) throw new Error('Hearth not started, cannot send event');
     // 停机期间冻结事件面：外部与模块的事件一律拒绝
     if (this.core.stopping && source !== 'core') {
-      throw new Error('Connect-Core is stopping, cannot send event');
+      throw new Error('Hearth is stopping, cannot send event');
     }
     await this.dispatch(name, data, source);
   }
@@ -84,7 +84,7 @@ export class EventDispatcher {
     // 2) 比对监听事件：收集匹配的监听模块，记录核心动作（转发或丢弃）
     const listeners = this.dedupSorted(this.listenIndex.lookup(fullName)).filter((m) => this.isDeliverable(m));
     if (listeners.length === 0) {
-      this.core.writeLog(LOG_TYPES.EVENT_DROP, source, fullName, { event: fullName, data });
+      this.core.writeLog(LOG_TYPES.EVENT_DROP, source, fullName, { data });
     } else {
       this.core.writeLog(LOG_TYPES.EVENT, source, fullName, {
         event: fullName,
@@ -128,7 +128,7 @@ export class EventDispatcher {
         await m.def!.onEvent!(m.ctx!, copy);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        this.core.writeLog(LOG_TYPES.ERROR, m.name, failPrefix + message, { event: event.name, error: message });
+        this.core.writeLog(LOG_TYPES.ERROR, m.name, failPrefix + message, { error: message });
       }
     }
   }
@@ -143,7 +143,7 @@ export class EventDispatcher {
    * 返回实际接收方的模块名（顺序即投递顺序）。单个模块失败被隔离，不影响其他接收方。
    */
   async sendDirected(targets: string[] | null, name: string, data?: unknown, source: string = 'external'): Promise<string[]> {
-    if (!this.core.started) throw new Error('Connect-Core not started, cannot send event');
+    if (!this.core.started) throw new Error('Hearth not started, cannot send event');
     if (typeof name !== 'string' || name.length === 0) {
       throw new Error('event name must be a non-empty string');
     }
@@ -155,7 +155,7 @@ export class EventDispatcher {
             .filter((m): m is ModuleSlot => !!m && this.isDeliverable(m));
     const fullName = source + ':' + name;
     if (recipients.length === 0) {
-      this.core.writeLog(LOG_TYPES.EVENT_DROP, source, fullName, { event: fullName, data, note: 'directed send: no valid recipients' });
+      this.core.writeLog(LOG_TYPES.EVENT_DROP, source, fullName, { data, note: 'directed send: no valid recipients' });
     } else {
       this.core.writeLog(LOG_TYPES.EVENT, source, fullName, { event: fullName, data, recipients: recipients.map((m) => m.name), directed: true });
       await this.deliverTo(recipients, { name: fullName, data }, 'failed to handle directed event: ');
@@ -173,9 +173,9 @@ export class EventDispatcher {
    * 消息带 source（发送者模块名，自动打、不可伪造）+ 内容 data。返回是否送达。
    */
   async sendTo(target: string, data?: unknown, source: string = 'external'): Promise<boolean> {
-    if (!this.core.started) throw new Error('Connect-Core not started, cannot send directed message');
+    if (!this.core.started) throw new Error('Hearth not started, cannot send directed message');
     if (this.core.stopping && source !== 'core') {
-      throw new Error('Connect-Core is stopping, cannot send directed message');
+      throw new Error('Hearth is stopping, cannot send directed message');
     }
     const message: DirectedMessage = { source, data };
 

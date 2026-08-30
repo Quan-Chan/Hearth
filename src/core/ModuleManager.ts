@@ -82,18 +82,17 @@ export class ModuleManager {
     if (!slot) throw new Error(`unknown module: ${name}`);
     if (!this.core.started) throw new Error('core not started, cannot reload module');
     if (this.core.stopping) {
-      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'core is stopping, skip reload', { module: name, reason: 'core-stopping' });
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'core is stopping, skip reload', { reason: 'core-stopping' });
       return false;
     }
     if (slot.inflightStart) {
       this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'module start/reload in progress, skip reload', {
-        module: name,
         reason: 'restart-in-progress',
       });
       return false;
     }
     if (!slot.config.enabled) {
-      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'module disabled, skip reload', { module: name, reason: 'disabled' });
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'module disabled, skip reload', { reason: 'disabled' });
       return false;
     }
     // ① 先验证新代码：加载失败则保留旧实例继续运行（替换不会中途出错）
@@ -103,7 +102,6 @@ export class ModuleManager {
     } catch (err) {
       const em = err instanceof Error ? err.message : String(err);
       this.core.writeLog(LOG_TYPES.ERROR, name, `reload failed: new code load error, old instance keeps running: ${em}`, {
-        module: name,
         error: em,
       });
       return false;
@@ -128,34 +126,30 @@ export class ModuleManager {
     if (!slot) throw new Error(`unknown module: ${name}`);
     if (!this.core.started) throw new Error('core not started, cannot start module');
     if (this.core.stopping) {
-      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'core is stopping, skip start', { module: name, reason: 'core-stopping' });
+      this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'core is stopping, skip start', { reason: 'core-stopping' });
       return;
     }
     // 幂等：事件密集到达时同模块可能被多次点名，已在跑/正在启动/被禁用的直接跳过。
     if (slot.status === 'running') {
       this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'module already running, skip start', {
-        module: name,
         reason: 'already-running',
       });
       return;
     }
     if (slot.inflightStart) {
       this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'module start in progress, skip duplicate start', {
-        module: name,
         reason: 'start-in-progress',
       });
       return;
     }
     if (!slot.config.enabled) {
       this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'module disabled, skip start', {
-        module: name,
         reason: 'disabled',
       });
       return;
     }
     if (slot.startTimedOut && !isManualishStart(reason)) {
       this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'previous start timed out, auto retry locked; manual start or config update required', {
-        module: name,
         reason: 'start-timeout-lock',
       });
       return;
@@ -191,7 +185,7 @@ export class ModuleManager {
           slot.status = 'failed';
           this.core.writeLog(LOG_TYPES.MODULE_START_TIMEOUT, name,
             `start timed out: not finished within ${timeoutMs}ms, gave up waiting and marked failed (auto retry locked)`,
-            { module: name, timeoutMs });
+            { timeoutMs });
           return;
         }
         if (startError) throw startError;
@@ -206,7 +200,6 @@ export class ModuleManager {
         slot.status = 'running';
         slot.startTimedOut = false;
         this.core.writeLog(LOG_TYPES.MODULE_START, name, describeStartReason(reason), {
-          module: name,
           file: slot.config.file,
           reason: reason ?? 'manual',
         });
@@ -215,7 +208,6 @@ export class ModuleManager {
         slot.status = 'failed';
         const em = err instanceof Error ? err.message : String(err);
         this.core.writeLog(LOG_TYPES.ERROR, name, `start failed: ${em}`, {
-          module: name,
           error: em,
         });
       } finally {
@@ -240,14 +232,12 @@ export class ModuleManager {
       slot.inflightStart = undefined;
       const cancelled = this.core.removeOwnerArrays(name);
       this.core.writeLog(LOG_TYPES.MODULE_STOP, name, 'cancelled during start, module stopped', {
-        module: name,
         removedArrays: cancelled,
       });
       return;
     }
     if (slot.status !== 'running') {
       this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'module not running, skip stop', {
-        module: name,
         reason: 'not-running',
       });
       return;
@@ -256,7 +246,6 @@ export class ModuleManager {
       await slot.def?.stop?.(slot.ctx!);
     } catch (err) {
       this.core.writeLog(LOG_TYPES.ERROR, name, `stop hook failed: ${err instanceof Error ? err.message : String(err)}`, {
-        module: name,
         error: err instanceof Error ? err.message : String(err),
       });
     }
@@ -267,7 +256,7 @@ export class ModuleManager {
       LOG_TYPES.MODULE_STOP,
       name,
       removed.length > 0 ? `module stopped, removed ${removed.length} shared arrays` : 'module stopped',
-      { module: name, removedArrays: removed },
+      { removedArrays: removed },
     );
   }
 
@@ -288,7 +277,6 @@ export class ModuleManager {
         m.inflightStart = undefined;
         const cancelled = this.core.removeOwnerArrays(m.name);
         this.core.writeLog(LOG_TYPES.MODULE_STOP, m.name, 'cancelled during start, module stopped', {
-          module: m.name,
           removedArrays: cancelled,
         });
         continue;
@@ -298,7 +286,6 @@ export class ModuleManager {
           await m.def?.stop?.(m.ctx!);
         } catch (err) {
           this.core.writeLog(LOG_TYPES.ERROR, m.name, `stop hook failed: ${err instanceof Error ? err.message : String(err)}`, {
-            module: m.name,
             error: err instanceof Error ? err.message : String(err),
           });
         }
@@ -309,7 +296,7 @@ export class ModuleManager {
           LOG_TYPES.MODULE_STOP,
           m.name,
           removed.length > 0 ? `module stopped, removed ${removed.length} shared arrays` : 'module stopped',
-          { module: m.name, removedArrays: removed },
+          { removedArrays: removed },
         );
       })();
       closing.push(close);

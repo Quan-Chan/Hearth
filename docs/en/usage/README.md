@@ -1,6 +1,6 @@
 # Usage Guide
 
-This document describes all features Connect-Core provides to module writers and host integrators.
+This document describes all features Hearth provides to module writers and host integrators.
 
 ## What Is a Module
 

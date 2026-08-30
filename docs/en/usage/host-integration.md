@@ -26,7 +26,7 @@ const core = await startCore({ moduleDir: './modules' });
 | maxLogMemoryEntries | 20000 | Upper limit of log entries kept in memory |
 | stopTimeoutMs | 20000 | Time limit in milliseconds for waiting for all modules to report closed during shutdown |
 
-The core section of the root config file connect-core.yaml can write the same fields; relative paths are resolved against the directory containing the config file.
+The core section of the root config file hearth.yaml can write the same fields; relative paths are resolved against the directory containing the config file.
 
 ## Core Methods
 
