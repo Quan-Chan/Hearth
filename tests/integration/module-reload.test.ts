@@ -88,7 +88,7 @@ test('reloadModule：新代码加载失败则保留旧实例继续运行（验�
     fs.writeFileSync(path.join(dir, 'rel.yaml'), yamlFor('rel', { startEvents: ['core:startup'], listen: ['*:rel:use'] }));
     const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
-    const startCount = core.log.byType('module-start').filter((s) => s.module === 'rel').length;
+    const startCount = core.log.byType('module-start').filter((s) => s.source === 'rel').length;
 
     // 写入坏代码并声明更新
     fs.writeFileSync(prog, BROKEN);
@@ -97,7 +97,7 @@ test('reloadModule：新代码加载失败则保留旧实例继续运行（验�
 
     // 旧实例未受影响：仍在运行、仍能处理事件、启动次数未变（没有被重启）
     assert.equal(core.getModule('rel')!.status, 'running');
-    assert.equal(core.log.byType('module-start').filter((s) => s.module === 'rel').length, startCount);
+    assert.equal(core.log.byType('module-start').filter((s) => s.source === 'rel').length, startCount);
     await core.sendEvent('rel:use');
     assert.deepEqual(arr(core as any, 'public:rel:marks'), ['v1', 'v1-handled'], '旧逻辑仍在工作');
 

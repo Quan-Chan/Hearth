@@ -47,7 +47,7 @@ test('聊天机器人：消息流转、命令应答、历史与用户数组', as
     // 通配符统计：chat:receive x4 + chat:command x3 + chat:reply x2 = 9 个事件
     assert.equal(arr(core, 'public:stats:stats')[0].count, 9);
     // 日志记录了所有事件（含派生事件）
-    const events = core.log.byType('event').map((e) => e.event);
+    const events = core.log.byType('event').map((e) => e.message);
     assert.ok(events.includes('external:chat:receive'));
     assert.ok(events.includes('router:chat:command'));
     assert.ok(events.some((e) => String(e).endsWith(':chat:reply')));
@@ -70,13 +70,13 @@ test('聊天机器人：日志文件记录全部事件（原样记录所有发�
     const parsed = lines.map((l) => JSON.parse(l));
     // 第一行是核心启动；随后 core:startup 事件被原样记录（无模块监听 -> event-drop）
     assert.equal(parsed[0].type, 'core-start');
-    const startup = parsed.find((e) => e.type === 'event-drop' && e.event === 'core:startup');
+    const startup = parsed.find((e) => e.type === 'event-drop' && e.message === 'core:startup');
     assert.ok(startup);
     assert.equal(startup.source, 'core');
     // 模块启动事件被记录
-    assert.ok(parsed.some((e) => e.type === 'module-start' && e.module === 'gateway'));
+    assert.ok(parsed.some((e) => e.type === 'module-start' && e.source === 'gateway'));
     // 用户消息被原样记录
-    const recv = parsed.find((e) => e.type === 'event' && e.event === 'external:chat:receive');
+    const recv = parsed.find((e) => e.type === 'event' && e.message === 'external:chat:receive');
     assert.equal(recv.data.user, 'carol');
     await core.stop();
   } finally {

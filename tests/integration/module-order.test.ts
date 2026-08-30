@@ -26,7 +26,7 @@ test('模块加载顺序按自然排序：m2 在 m10 前，alpha-2 在 alpha-10 
     await core.sendEvent('go');
     const reg = core.listModules().map((m) => m.name);
     assert.deepEqual(reg, ['alpha-2', 'alpha-10', 'm2', 'm10']);
-    const starts = core.log.byType('module-start').map((e) => e.module);
+    const starts = core.log.byType('module-start').map((e) => e.source);
     assert.deepEqual(starts, ['alpha-2', 'alpha-10', 'm2', 'm10']);
     await core.stop();
   } finally {

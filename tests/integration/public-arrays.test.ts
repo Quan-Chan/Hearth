@@ -96,7 +96,7 @@ test('模块停止：其公开数组自动消失，不留残档；重启后是�
     assert.deepEqual(arrayNames(core).sort(), ['public:consumer:own']);
     assert.throws(() => arr(core, 'public:producer:items'), /not found/);
     assert.throws(() => arr(core, 'public:producer:own'), /not found/);
-    assert.ok(core.log.byType('module-stop').some((s) => s.module === 'producer' && Array.isArray(s.removedArrays) && s.removedArrays.length === 2));
+    assert.ok(core.log.byType('module-stop').some((s) => s.source === 'producer' && Array.isArray(s.removedArrays) && s.removedArrays.length === 2));
     // 重启 producer -> 重新映射全新数组（旧数据不残留）
     await core.startModule('producer', 'manual');
     assert.deepEqual(arr(core, 'public:producer:own'), ['p']);

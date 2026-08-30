@@ -28,7 +28,7 @@ test('监听模块文件夹：新增 YAML 自动加载并注册，不补启动�
     fs.writeFileSync(path.join(dir, 'greeter.cjs'), GREETER);
     fs.writeFileSync(path.join(dir, 'greeter.yaml'), yamlFor('greeter', { startEvents: ['core:startup'], listen: ['*:greet'] }));
     await waitFor(() => core.getModule('greeter') !== undefined);
-    assert.ok(core.log.byType('config-load').some((l) => l.module === 'greeter'));
+    assert.ok(core.log.byType('config-load').some((l) => l.source === 'greeter'));
     // core:startup 已发生过，不自动补启动
     assert.equal(core.getModule('greeter')!.status, 'stopped');
     await core.startModule('greeter');
@@ -73,13 +73,13 @@ test('YAML 变化：YAML 层热生效——索引即时更新，模块不重启�
     await waitFor(() => core.getModule('greeter') !== undefined);
     await core.startModule('greeter');
     await waitFor(() => core.getModule('greeter')!.status === 'running');
-    const startCount = core.log.byType('module-start').filter((s) => s.module === 'greeter').length;
+    const startCount = core.log.byType('module-start').filter((s) => s.source === 'greeter').length;
     // 修改 YAML：listen 改为另一事件（YAML 更新 ≠ 代码重载）
     fs.writeFileSync(yamlPath, yamlFor('greeter', { startEvents: ['core:startup'], listen: ['*:greet:new'] }));
-    await waitFor(() => core.log.byType('config-update').some((l) => l.module === 'greeter'));
+    await waitFor(() => core.log.byType('config-update').some((l) => l.source === 'greeter'));
     // 不重启：启动次数未增加、无 module-stop（实例与代码不动）
-    assert.equal(core.log.byType('module-start').filter((s) => s.module === 'greeter').length, startCount, '配置更新不重启模块');
-    assert.equal(core.log.byType('module-stop').filter((s) => s.module === 'greeter').length, 0);
+    assert.equal(core.log.byType('module-start').filter((s) => s.source === 'greeter').length, startCount, '配置更新不重启模块');
+    assert.equal(core.log.byType('module-stop').filter((s) => s.source === 'greeter').length, 0);
     // 匹配索引即时更新：新监听生效，旧监听失效
     await core.sendEvent('greet');
     assert.deepEqual(arr(core as any, 'public:greeter:out'), []);
@@ -103,8 +103,8 @@ test('删除 YAML：模块被停止并移除', async () => {
     await waitFor(() => core.getModule('greeter')!.status === 'running');
     fs.rmSync(path.join(dir, 'greeter.yaml'));
     await waitFor(() => core.getModule('greeter') === undefined);
-    assert.ok(core.log.byType('module-stop').some((s) => s.module === 'greeter'));
-    assert.ok(core.log.byType('config-remove').some((l) => l.module === 'greeter'));
+    assert.ok(core.log.byType('module-stop').some((s) => s.source === 'greeter'));
+    assert.ok(core.log.byType('config-remove').some((l) => l.source === 'greeter'));
     await core.stop();
   } finally {
     rmDir(dir);
@@ -140,7 +140,7 @@ test('相同内容重写：只改 mtime 不触发 config-update（touch 假阳�
     // 用相同内容重写文件（touch）：指纹变化但哈希相同 -> 不得触发 config-update
     fs.writeFileSync(yamlPath, yaml);
     await sleep(200); // 跨过至少 3 个轮询周期
-    assert.equal(core.log.byType('config-update').filter((l) => l.module === 'greeter').length, 0);
+    assert.equal(core.log.byType('config-update').filter((l) => l.source === 'greeter').length, 0);
     // 事件仍正常送达（模块未被打断重启）
     await core.sendEvent('greet');
     assert.deepEqual(arr(core as any, 'public:greeter:out'), ['external:greet']);
@@ -164,7 +164,7 @@ test('快速连续改写：最终收敛到最新配置（YAML 层，不重启）
     fs.writeFileSync(yamlPath, yamlFor('greeter', { startEvents: ['core:startup'], listen: ['*:greet:final'] }));
     // 最终配置生效（config.listen 收敛为 final；无重启）
     await waitFor(() => (core.getModule('greeter')!.config.listen ?? []).includes('*:greet:final'));
-    assert.equal(core.log.byType('module-start').filter((s) => s.module === 'greeter').length, 1, '未重启');
+    assert.equal(core.log.byType('module-start').filter((s) => s.source === 'greeter').length, 1, '未重启');
     await core.sendEvent('greet');
     assert.deepEqual(arr(core as any, 'public:greeter:out'), []);
     await core.sendEvent('greet:final');
@@ -233,11 +233,11 @@ test('模块改写自己的 YAML：listen 事件表变化，核心同步（不�
     // 模块在 onEvent 中改写自己的 YAML（此刻只监听 selfedit:add）
     await core.sendEvent('selfedit:add');
     // 核心感知配置变化（config-update）——YAML 层热生效
-    await waitFor(() => core.log.byType('config-update').some((l) => l.module === 'selfedit'));
+    await waitFor(() => core.log.byType('config-update').some((l) => l.source === 'selfedit'));
     // 核心同步的新追踪事件表（公开 API 可查）
     assert.deepEqual(core.getModule('selfedit')!.config.listen, ['*:selfedit:add', '*:selfedit:extra', '*:selfedit:*']);
     // 不重启、不重载代码：start 只发生一次，模块实例状态保留
-    assert.equal(core.log.byType('module-start').filter((s) => s.module === 'selfedit').length, 1, '模块未重启');
+    assert.equal(core.log.byType('module-start').filter((s) => s.source === 'selfedit').length, 1, '模块未重启');
     assert.deepEqual(arr(core as any, 'public:selfedit:marks'), ['started', 'external:selfedit:add'], '实例状态保留');
     // 新加的事件名即时生效（索引已更新）
     await core.sendEvent('selfedit:extra');
@@ -283,7 +283,7 @@ test('模块改写自己的 YAML：startEvents 变化，新的启动事件可自
     await waitFor(() => core.getModule('bootcfg')?.status === 'running');
     // 模块改写自己的 YAML：startEvents 增加 bootcfg:again
     await core.sendEvent('bootcfg:config');
-    await waitFor(() => core.log.byType('config-update').some((l) => l.module === 'bootcfg'));
+    await waitFor(() => core.log.byType('config-update').some((l) => l.source === 'bootcfg'));
     // 核心已同步新 startEvents；停止模块
     await core.stopModule('bootcfg');
     assert.equal(core.getModule('bootcfg')!.status, 'stopped');
@@ -292,7 +292,7 @@ test('模块改写自己的 YAML：startEvents 变化，新的启动事件可自
     await waitFor(() => core.getModule('bootcfg')!.status === 'running');
     assert.deepEqual(core.getModule('bootcfg')!.config.startEvents, ['core:startup', '*:bootcfg:again']);
     assert.deepEqual(arr(core as any, 'public:bootcfg:marks'), ['started']);
-    const starts = core.log.byType('module-start').filter((s) => s.module === 'bootcfg');
+    const starts = core.log.byType('module-start').filter((s) => s.source === 'bootcfg');
     assert.equal(starts[starts.length - 1].reason, 'external:bootcfg:again');
     await core.stop();
   } finally {

@@ -53,7 +53,7 @@ test('event 指令：生成自定义事件（来源段为发起方）', async ()
     const r = await ask(core, 'event', { name: 'hello', data: { who: 'world' } });
     assert.equal(r.ok, true);
     assert.deepEqual(arr(core as any, 'public:listener:got'), ['tester:hello']);
-    assert.ok(core.log.byType('cli-command').some((l) => l.command === 'event'));
+    assert.ok(core.log.byType('cli-command').some((l) => String(l.message).includes('event')));
     await core.stop();
   } finally { rmDir(dir); }
 });

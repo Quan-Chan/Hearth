@@ -90,7 +90,7 @@ test('启动核心 == 启动整个软件：core:startup 自动启动匹配模块
     assert.deepEqual(arr(core as any, 'public:boot:marks'), ['started']);
     // 日志：核心启动事件原样记录（无模块监听 -> 记录为 event-drop）
     const drops = core.log.byType('event-drop');
-    assert.equal(drops[0].event, 'core:startup');
+    assert.equal(drops[0].message, 'core:startup');
     assert.equal(drops[0].source, 'core');
     // 附注：因为 startup 无监听者，任何以 core:startup 为启动条件的模块仍会先行启动（启动比对在丢弃判定之前）
     const starts = core.log.byType('module-start');
@@ -134,7 +134,7 @@ test('框架核心方法：startModule / stopModule / sendEvent', async () => {
     // 手动停止与启动
     await core.stopModule('boot');
     assert.equal(core.getModule('boot')!.status, 'stopped');
-    assert.ok(core.log.byType('module-stop').some((s) => s.module === 'boot'));
+    assert.ok(core.log.byType('module-stop').some((s) => s.source === 'boot'));
     await core.startModule('boot', 'manual');
     assert.equal(core.getModule('boot')!.status, 'running');
     // 未知模块抛错
@@ -184,7 +184,7 @@ test('关闭：全部模块返回"已关闭"后核心关闭，之后不能再发
     const started = core.listModules().filter((m) => m.status === 'running').map((m) => m.name);
     await core.stop();
     // ① 每个运行过的模块都走了停止（stop() 返回 = 已关闭；停止是并行触发，不承诺顺序）
-    const stopModules = new Set(core.log.byType('module-stop').map((s) => s.module as string));
+    const stopModules = new Set(core.log.byType('module-stop').map((s) => s.source as string));
     for (const name of started) assert.ok(stopModules.has(name), name + ' 已完成停止');
     // badhandler 的 stop 不存在但仍应视为已关闭（stop() 未定义 = 立即返回）——boot 覆盖
     assert.equal(core.log.byType('core-stop').length, 1);
@@ -204,13 +204,13 @@ test('事件丢弃：无人监听的事件记录 event-drop', async () => {
     await core.start();
     // nobody:listens 没有任何模块监听（也没有模块以此为启动事件）；事件名为两段式
     await core.sendEvent('nobody:listens', { x: 1 }, 'tester');
-    const drops = core.log.byType('event-drop').filter((e) => e.event === 'tester:nobody:listens');
+    const drops = core.log.byType('event-drop').filter((e) => e.message === 'tester:nobody:listens');
     assert.equal(drops.length, 1);
     assert.equal(drops[0].source, 'tester');
     assert.equal(drops[0].message, 'tester:nobody:listens');
     // 有监听的正常事件不产生 event-drop
     await core.sendEvent('wild:ok');
-    assert.equal(core.log.byType('event-drop').filter((e) => e.event === 'tester:nobody:listens').length, 1);
+    assert.equal(core.log.byType('event-drop').filter((e) => e.message === 'tester:nobody:listens').length, 1);
     await core.stop();
   } finally {
     rmDir(dir);

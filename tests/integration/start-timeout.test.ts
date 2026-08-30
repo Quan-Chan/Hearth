@@ -39,12 +39,12 @@ test('启动超时：超过 startTimeoutMs 未完成 -> module-start-timeout + f
     await core.startModule('hang', 'manual'); // 手动触发（首次启动，不锁定）
     // ① 超时后状态 failed，日志有 module-start-timeout
     assert.equal(core.getModule('hang')!.status, 'failed');
-    const timeoutLogs = core.log.byType('module-start-timeout').filter((l) => l.module === 'hang');
+    const timeoutLogs = core.log.byType('module-start-timeout').filter((l) => l.source === 'hang');
     assert.equal(timeoutLogs.length, 1);
     assert.ok(String(timeoutLogs[0].message).includes('100ms'));
     // ② 事件再次触发：被锁，记 start-timeout-lock 跳过，不再重复拉起
     await core.sendEvent('go');
-    const skipLogs = core.log.byType('module-skip').filter((l) => l.module === 'hang' && l.reason === 'start-timeout-lock');
+    const skipLogs = core.log.byType('module-skip').filter((l) => l.source === 'hang' && l.reason === 'start-timeout-lock');
     assert.equal(skipLogs.length, 1);
     assert.equal(core.getModule('hang')!.status, 'failed'); // 状态不变
     await core.stop();

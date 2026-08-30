@@ -43,7 +43,7 @@ test('智能家居：温度超阈值自动制冷，链式事件 + 模块日志',
     // 30 度 > 26 -> 制冷
     await core.sendEvent('home:temperature', { room: 'living', temp: 30 });
     assert.deepEqual(arr(core, 'public:thermostat:devices'), [{ room: 'living', cooling: true }]);
-    assert.ok(core.log.byType('module-log').some((l) => l.module === 'cooler' && String(l.message).includes('制冷')));
+    assert.ok(core.log.byType('module-log').some((l) => l.source === 'cooler' && String(l.message).includes('制冷')));
     // 22 度 -> 不制冷
     await core.sendEvent('home:temperature', { room: 'living', temp: 22 });
     assert.equal(arr(core, 'public:thermostat:devices')[0].cooling, true); // 保持开启（不自动关）

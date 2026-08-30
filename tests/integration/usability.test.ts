@@ -118,7 +118,7 @@ test('模块可用方法全景：ctx 8 个方法端到端可用', async () => {
     assert.equal((arr(core as any, 'public:sink:got')[0] as any).name, 'apiuser:api:done');
     assert.equal((arr(core as any, 'public:sink:got')[0] as any).data.note, '从模块发出的事件');
     // ctx.log 进入日志时间线（module-log）
-    const logged = core.log.byType('module-log').filter((e) => e.module === 'apiuser');
+    const logged = core.log.byType('module-log').filter((e) => e.source === 'apiuser');
     assert.equal(logged.length, 1);
     assert.ok(String(logged[0].message).includes('threshold=42'));
     // 停止 -> stop 钩子执行，数组随模块消失
