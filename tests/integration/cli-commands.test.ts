@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ConnectCore } from '../../src/core/ConnectCore';
+import { Hearth } from '../../src/core/Hearth';
 import { mkTmpDir, rmDir, waitFor, arr, yamlFor } from '../helpers';
 
 /** 测试接收者模块：接收核心回传的指令结果。 */
@@ -32,12 +32,12 @@ function makeDir(dir: string): void {
   fs.writeFileSync(path.join(dir, 'tester.yaml'), yamlFor('tester', { startEvents: ['core:startup'] }));
 }
 
-function resultsArr(core: ConnectCore): any[] {
+function resultsArr(core: Hearth): any[] {
   return arr<any[]>(core as any, 'public:tester:results');
 }
 
 /** 发一条指令（发起方为 tester 模块），等待并返回最新结果。 */
-async function ask(core: ConnectCore, cmd: string, args: Record<string, unknown> = {}): Promise<any> {
+async function ask(core: Hearth, cmd: string, args: Record<string, unknown> = {}): Promise<any> {
   const before = resultsArr(core).length;
   await core.sendTo('core', { cmd, args }, 'tester');
   await waitFor(() => resultsArr(core).length > before);
@@ -48,7 +48,7 @@ test('event 指令：生成自定义事件（来源段为发起方）', async ()
   const dir = mkTmpDir('cli');
   try {
     makeDir(dir);
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     const r = await ask(core, 'event', { name: 'hello', data: { who: 'world' } });
     assert.equal(r.ok, true);
@@ -62,7 +62,7 @@ test('start 指令：无需事件也能启动模块', async () => {
   const dir = mkTmpDir('cli');
   try {
     makeDir(dir);
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     assert.equal(core.getModule('lazy')!.status, 'stopped');
     const r = await ask(core, 'start', { module: 'lazy' });
@@ -77,7 +77,7 @@ test('stop 指令：关闭模块，其数组随之消失', async () => {
   const dir = mkTmpDir('cli');
   try {
     makeDir(dir);
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     const r = await ask(core, 'stop', { module: 'echo' });
     assert.equal(r.ok, true);
@@ -91,7 +91,7 @@ test('send 指令：定向投递给不监听的模块，且不影响他人', asy
   const dir = mkTmpDir('cli');
   try {
     makeDir(dir);
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     await core.sendEvent('direct:x', {}, 'tester'); // 普通路由：无监听声明 -> 丢弃
     assert.deepEqual(arr(core as any, 'public:echo:out'), []);
@@ -107,7 +107,7 @@ test('send 指令 * 广播：发给所有运行中且有 onEvent 的模块', asy
   const dir = mkTmpDir('cli');
   try {
     makeDir(dir);
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     const r = await ask(core, 'send', { targets: '*', name: 'all:go', data: {} });
     assert.equal(r.ok, true);
@@ -121,7 +121,7 @@ test('state 指令：结果携带模块与公共数组清单', async () => {
   const dir = mkTmpDir('cli');
   try {
     makeDir(dir);
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     const r = await ask(core, 'state', {});
     assert.deepEqual(r.result.modules.map((m: any) => m.name).sort(), ['echo', 'lazy', 'listener', 'tester']);
@@ -135,7 +135,7 @@ test('未知指令：结果 ok:false + error，核心继续可用', async () => 
   const dir = mkTmpDir('cli');
   try {
     makeDir(dir);
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     const r = await ask(core, 'frobnicate', {});
     assert.equal(r.ok, false);
@@ -150,7 +150,7 @@ test('exit 指令：先回执再关闭核心', async () => {
   const dir = mkTmpDir('cli');
   try {
     makeDir(dir);
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     await core.sendTo('core', { cmd: 'exit', args: {} }, 'tester');
     await waitFor(() => core.started === false);

@@ -17,13 +17,13 @@ function runInWorker(guardOn: boolean, dir: string): Promise<{ hasRejection: boo
   return new Promise((resolve, reject) => {
     const workerCode = `
       const { parentPort, workerData } = require('worker_threads');
-      const { ConnectCore } = require(workerData.corePath);
+      const { Hearth } = require(workerData.corePath);
       const fs = require('fs');
       const path = require('path');
       const dir = workerData.dir;
       fs.writeFileSync(path.join(dir, 'bad.cjs'), 'module.exports = { start() { setTimeout(() => { Promise.reject(new Error("private async failure")); }, 30); setTimeout(() => { throw new Error("private sync exception"); }, 60); } };');
       fs.writeFileSync(path.join(dir, 'bad.yaml'), 'name: bad\\nfile: ./bad.cjs\\nstartEvents: ["core:startup"]\\n');
-      const core = new ConnectCore({ moduleDir: dir, watch: false, guardProcess: ${guardOn}, logFile: path.join(dir, 'app.log') });
+      const core = new Hearth({ moduleDir: dir, watch: false, guardProcess: ${guardOn}, logFile: path.join(dir, 'app.log') });
       core.start().then(() => {
         setTimeout(() => {
           const errs = core.log.byType('error');
@@ -35,7 +35,7 @@ function runInWorker(guardOn: boolean, dir: string): Promise<{ hasRejection: boo
     `;
     const w = new Worker(workerCode, {
       eval: true,
-      workerData: { corePath: path.join(ROOT, 'dist', 'core', 'ConnectCore.js'), dir },
+      workerData: { corePath: path.join(ROOT, 'dist', 'core', 'Hearth.js'), dir },
     });
     w.on('message', (msg) => resolve({ ...msg, exitOk: true }));
     w.on('error', (err) => reject(err));

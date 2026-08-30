@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ConnectCore } from '../../src/core/ConnectCore';
+import { Hearth } from '../../src/core/Hearth';
 import { mkTmpDir, rmDir, waitFor, arr, yamlFor } from '../helpers';
 
 // ==================== 测试 1：核心真实启动模块，start/stop 钩子执行 ====================
@@ -35,7 +35,7 @@ test('核心可真实启动模块：start/stop 钩子执行，状态机流转正
   try {
     fs.writeFileSync(path.join(dir, 'hooked.cjs'), HOOKED_CJS);
     fs.writeFileSync(path.join(dir, 'hooked.yaml'), yamlFor('hooked', { startEvents: ['core:startup'], listen: ['*:hook:ping'] }));
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     // 钩子真实执行证据（状态流转由 core-lifecycle 覆盖，这里只验证钩子调用）
     assert.equal(fs.readFileSync(path.join(dir, 'hooks.log'), 'utf8'), 'start\n');
@@ -99,7 +99,7 @@ test('模块可用方法全景：ctx 8 个方法端到端可用', async () => {
     );
     fs.writeFileSync(path.join(dir, 'sink.cjs'), SINK_CJS);
     fs.writeFileSync(path.join(dir, 'sink.yaml'), yamlFor('sink', { startEvents: ['core:startup'], listen: ['*:api:done'] }));
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     assert.deepEqual(arr(core as any, 'public:apiuser:pub'), [1, 2]);
     // ctx.config 透传 YAML 配置
@@ -158,7 +158,7 @@ test('事件两段式：事件名为 来源:事件名，来源段由核心拼装
     fs.writeFileSync(path.join(dir, 'srcsend.yaml'), yamlFor('srcsend', { startEvents: ['core:startup'], listen: ['*:src:go'] }));
     fs.writeFileSync(path.join(dir, 'srcrecv.cjs'), SRC_RECV_CJS);
     fs.writeFileSync(path.join(dir, 'srcrecv.yaml'), yamlFor('srcrecv', { startEvents: ['core:startup'], listen: ['core:startup', '*:src:relay'] }));
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     // ① 核心自产事件：完整名 'core:startup'，无内容
     const startupSeen = arr(core as any, 'public:srcrecv:got').find((e: any) => e.name === 'core:startup') as any;

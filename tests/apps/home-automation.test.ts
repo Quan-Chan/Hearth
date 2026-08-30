@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'path';
-import { ConnectCore } from '../../src/core/ConnectCore';
+import { Hearth } from '../../src/core/Hearth';
 import { mkTmpDir, rmDir, arr } from '../helpers';
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
@@ -14,7 +14,7 @@ const MODULE_DIR = path.join(ROOT, 'tests', 'fixtures', 'home-automation', 'modu
 test('智能家居：人体感应联动灯光，多个模块同时监听同一事件', async () => {
   const tmp = mkTmpDir('home');
   try {
-    const core = new ConnectCore({ moduleDir: MODULE_DIR, logFile: path.join(tmp, 'log.log'), watch: false });
+    const core = new Hearth({ moduleDir: MODULE_DIR, logFile: path.join(tmp, 'log.log'), watch: false });
     await core.start();
     // 有人进入客厅 -> 灯亮 + 传感器更新
     await core.sendEvent('home:motion', { room: 'living', motion: true });
@@ -38,7 +38,7 @@ test('智能家居：人体感应联动灯光，多个模块同时监听同一�
 test('智能家居：温度超阈值自动制冷，链式事件 + 模块日志', async () => {
   const tmp = mkTmpDir('home');
   try {
-    const core = new ConnectCore({ moduleDir: MODULE_DIR, logFile: path.join(tmp, 'log.log'), watch: false });
+    const core = new Hearth({ moduleDir: MODULE_DIR, logFile: path.join(tmp, 'log.log'), watch: false });
     await core.start();
     // 30 度 > 26 -> 制冷
     await core.sendEvent('home:temperature', { room: 'living', temp: 30 });
@@ -56,7 +56,7 @@ test('智能家居：温度超阈值自动制冷，链式事件 + 模块日志',
 test('智能家居：安全日志用通配符原样记录所有 home:* 事件', async () => {
   const tmp = mkTmpDir('home');
   try {
-    const core = new ConnectCore({ moduleDir: MODULE_DIR, logFile: path.join(tmp, 'log.log'), watch: false });
+    const core = new Hearth({ moduleDir: MODULE_DIR, logFile: path.join(tmp, 'log.log'), watch: false });
     await core.start();
     await core.sendEvent('home:motion', { room: 'living', motion: true });
     await core.sendEvent('home:temperature', { room: 'living', temp: 30 });

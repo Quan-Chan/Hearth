@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ConnectCore } from '../../src/core/ConnectCore';
+import { Hearth } from '../../src/core/Hearth';
 import { mkTmpDir, rmDir, waitFor, yamlFor } from '../helpers';
 
 /** 启动函数永不返回的模块（模拟悬挂启动）。 */
@@ -34,7 +34,7 @@ test('启动超时：超过 startTimeoutMs 未完成 -> module-start-timeout + f
     fs.writeFileSync(path.join(dir, 'hang.cjs'), HANG_CJS);
     // 声明 100ms 启动超时
     fs.writeFileSync(path.join(dir, 'hang.yaml'), 'name: hang\nfile: ./hang.cjs\nstartTimeoutMs: 100\nstartEvents: ["*:go"]\n');
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     await core.startModule('hang', 'manual'); // 手动触发（首次启动，不锁定）
     // ① 超时后状态 failed，日志有 module-start-timeout
@@ -58,7 +58,7 @@ test('启动超时锁定：手动启动可解锁重试', async () => {
   try {
     fs.writeFileSync(path.join(dir, 'hangonce.cjs'), HANG_ONCE_CJS);
     fs.writeFileSync(path.join(dir, 'hangonce.yaml'), 'name: hangonce\nfile: ./hangonce.cjs\nstartTimeoutMs: 100\n');
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     // 第一次启动：悬挂 -> 超时 -> failed + 锁定
     await core.startModule('hangonce', 'manual');
@@ -80,7 +80,7 @@ test('启动超时：CLI 指令启动（reason=cli）也可解锁重试', async 
   try {
     fs.writeFileSync(path.join(dir, 'hangonce.cjs'), HANG_ONCE_CJS);
     fs.writeFileSync(path.join(dir, 'hangonce.yaml'), 'name: hangonce\nfile: ./hangonce.cjs\nstartTimeoutMs: 100\n');
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     await core.startModule('hangonce', 'manual');
     assert.equal(core.getModule('hangonce')!.status, 'failed');
@@ -105,7 +105,7 @@ test('启动挂起：状态停在 starting，未配置超时则调用方拿不�
     fs.writeFileSync(path.join(dir, 'hang.yaml'), yamlFor('hang', {}));
     fs.writeFileSync(path.join(dir, 'ok.cjs'), OK_CJS);
     fs.writeFileSync(path.join(dir, 'ok.yaml'), yamlFor('ok', { startEvents: ['core:startup'], listen: ['*:ping'] }));
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     // 手动启动 hang：不等待返回（startModule 会挂起），观察状态
     const startPromise = core.startModule('hang', 'manual');

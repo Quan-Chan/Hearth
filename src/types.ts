@@ -95,7 +95,7 @@ export interface ModuleDefinition {
 }
 
 /** 核心启动选项。 */
-export interface ConnectCoreOptions {
+export interface HearthOptions {
   /** 模块文件夹（YAML 配置所在目录），默认 ./modules */
   moduleDir?: string;
   /** 核心日志文件路径，默认 ./logs/event-stream.log */

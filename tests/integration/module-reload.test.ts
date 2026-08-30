@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ConnectCore } from '../../src/core/ConnectCore';
+import { Hearth } from '../../src/core/Hearth';
 import { mkTmpDir, rmDir, waitFor, arr, yamlFor } from '../helpers';
 
 const V1 = `const fs = require('fs');
@@ -52,7 +52,7 @@ test('reloadModule：验证通过则停旧启新，新代码立即生效（宿�
     const prog = path.join(dir, 'rel.cjs');
     fs.writeFileSync(prog, V1);
     fs.writeFileSync(path.join(dir, 'rel.yaml'), yamlFor('rel', { startEvents: ['core:startup'], listen: ['*:rel:use', '*:rel:reload'] }));
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     assert.equal(core.getModule('rel')!.status, 'running');
     await core.sendEvent('rel:use');
@@ -86,7 +86,7 @@ test('reloadModule：新代码加载失败则保留旧实例继续运行（验�
     const prog = path.join(dir, 'rel.cjs');
     fs.writeFileSync(prog, V1);
     fs.writeFileSync(path.join(dir, 'rel.yaml'), yamlFor('rel', { startEvents: ['core:startup'], listen: ['*:rel:use'] }));
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     const startCount = core.log.byType('module-start').filter((s) => s.source === 'rel').length;
 
@@ -116,7 +116,7 @@ test('requestReload：模块自己替换代码并请求重启（模块内触发�
     const prog = path.join(dir, 'rel.cjs');
     fs.writeFileSync(prog, V1);
     fs.writeFileSync(path.join(dir, 'rel.yaml'), yamlFor('rel', { startEvents: ['core:startup'], listen: ['*:rel:reload', '*:rel:use'] }));
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
 
     // 模块内部替换自己的代码文件，然后发 rel:reload 事件触发 ctx.requestReload()

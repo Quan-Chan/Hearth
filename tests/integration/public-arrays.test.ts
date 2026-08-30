@@ -2,11 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ConnectCore } from '../../src/core/ConnectCore';
+import { Hearth } from '../../src/core/Hearth';
 import { mkTmpDir, rmDir, arr, yamlFor } from '../helpers';
 
 /** 匹配拉取全名清单（通配方式）。 */
-function arrayNames(core: ConnectCore): string[] {
+function arrayNames(core: Hearth): string[] {
   return Object.keys(core.array('*') as Record<string, unknown>);
 }
 
@@ -47,7 +47,7 @@ test('一次修改处处有效：A 公开 -> B 编辑 -> C（核心）读取可�
   const dir = mkTmpDir('arr');
   try {
     makeDir(dir);
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     assert.deepEqual(arrayNames(core).sort(), ['public:consumer:own', 'public:producer:items', 'public:producer:own']);
     // 模块 B（consumer）编辑模块 A（producer）公开的数组（原生引用）
@@ -67,7 +67,7 @@ test('取消公开：仅拥有者可以，取消后他人不可拉取', async ()
   const dir = mkTmpDir('arr');
   try {
     makeDir(dir);
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     // 消费者不能取消别人的数组（消费者名下不存在该数组）
     assert.throws(() => core.unexposeArray('items', 'consumer'), /not found/);
@@ -88,7 +88,7 @@ test('模块停止：其公开数组自动消失，不留残档；重启后是�
   const dir = mkTmpDir('arr');
   try {
     makeDir(dir);
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     assert.deepEqual(arrayNames(core).sort(), ['public:consumer:own', 'public:producer:items', 'public:producer:own']);
     // 停止 producer -> 它的数组全部消失
@@ -111,7 +111,7 @@ test('匹配拉取通配：按模式取多个数组', async () => {
   const dir = mkTmpDir('arr');
   try {
     makeDir(dir);
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     const matches = core.array('public:producer:*') as Record<string, unknown[]>;
     assert.deepEqual(Object.keys(matches).sort(), ['public:producer:items', 'public:producer:own']);
@@ -127,7 +127,7 @@ test('核心直接操作公共数组（原生引用操作，数组操作不记�
   const dir = mkTmpDir('arr');
   try {
     makeDir(dir);
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     core.exposeArray('list', 'admin', ['a', 'b', 'c']);
     const list = arr(core, 'public:admin:list');

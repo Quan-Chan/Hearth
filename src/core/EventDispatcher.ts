@@ -10,12 +10,12 @@
  *
  * 索引与启停无关：配置变更时由核心调用 rebuildIndexes 重建，模块启停不碰索引。
  *
- * 依赖注入：构造时传入 ConnectCore 与 ModuleManager 实例（只做类型引用），
+ * 依赖注入：构造时传入 Hearth 与 ModuleManager 实例（只做类型引用），
  * 事件启动模块经由 manager.startModule，投递目标查询经由 manager.slots/getSlot。
  */
 import { LOG_TYPES } from './logFormat';
 import { MatchIndex } from './MatchIndex';
-import type { ConnectCore } from './ConnectCore';
+import type { Hearth } from './Hearth';
 import type { ModuleManager } from './ModuleManager';
 import type { CoreEvent, DirectedMessage, ModuleSlot } from '../types';
 
@@ -34,7 +34,7 @@ export class EventDispatcher {
   private readonly listenIndex = new MatchIndex<ModuleSlot>();
 
   constructor(
-    private readonly core: ConnectCore,
+    private readonly core: Hearth,
     private readonly manager: ModuleManager,
   ) {}
 

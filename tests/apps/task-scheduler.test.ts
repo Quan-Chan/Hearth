@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'path';
-import { ConnectCore } from '../../src/core/ConnectCore';
+import { Hearth } from '../../src/core/Hearth';
 import { mkTmpDir, rmDir, waitFor, arr } from '../helpers';
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
@@ -14,7 +14,7 @@ const MODULE_DIR = path.join(ROOT, 'tests', 'fixtures', 'task-scheduler', 'modul
 test('任务调度器：提交 -> 到期 -> 执行 -> 通知 全链路', async () => {
   const tmp = mkTmpDir('sched');
   try {
-    const core = new ConnectCore({ moduleDir: MODULE_DIR, logFile: path.join(tmp, 'log.log'), watch: false });
+    const core = new Hearth({ moduleDir: MODULE_DIR, logFile: path.join(tmp, 'log.log'), watch: false });
     await core.start();
     // 提交 3 个任务，不同延迟
     await core.sendEvent('task:submit', { id: 't1', name: '构建前端', delayMs: 30 });
@@ -42,7 +42,7 @@ test('任务调度器：提交 -> 到期 -> 执行 -> 通知 全链路', async (
 test('任务调度器：取消任务后不再执行', async () => {
   const tmp = mkTmpDir('sched');
   try {
-    const core = new ConnectCore({ moduleDir: MODULE_DIR, logFile: path.join(tmp, 'log.log'), watch: false });
+    const core = new Hearth({ moduleDir: MODULE_DIR, logFile: path.join(tmp, 'log.log'), watch: false });
     await core.start();
     await core.sendEvent('task:submit', { id: 'keep', name: '保留', delayMs: 200 });
     await core.sendEvent('task:submit', { id: 'drop', name: '取消我', delayMs: 60 });

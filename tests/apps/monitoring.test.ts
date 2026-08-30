@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'path';
-import { ConnectCore } from '../../src/core/ConnectCore';
+import { Hearth } from '../../src/core/Hearth';
 import { mkTmpDir, rmDir, arr } from '../helpers';
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
@@ -14,7 +14,7 @@ const MODULE_DIR = path.join(ROOT, 'tests', 'fixtures', 'monitoring', 'modules')
 test('监控告警：指标聚合去重 + 阈值告警 + 历史归档', async () => {
   const tmp = mkTmpDir('mon');
   try {
-    const core = new ConnectCore({ moduleDir: MODULE_DIR, logFile: path.join(tmp, 'log.log'), watch: false });
+    const core = new Hearth({ moduleDir: MODULE_DIR, logFile: path.join(tmp, 'log.log'), watch: false });
     await core.start();
     // YAML 配置的阈值被模块读取（阈值 100）
     const alerting = core.getModule('alerting')!;

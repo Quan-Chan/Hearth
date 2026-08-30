@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ConnectCore } from '../../src/core/ConnectCore';
+import { Hearth } from '../../src/core/Hearth';
 import { mkTmpDir, rmDir, yamlFor } from '../helpers';
 const ACK_CJS = "const fs = require('fs');\nconst path = require('path');\nconst LOG = path.join(__dirname, 'ack.log');\nmodule.exports = {\n  start(ctx) { ctx.exposeArray('marks', ['started']); },\n  stop(ctx) {\n    fs.appendFileSync(LOG, 'stop-called\\n');\n    // 停止逻辑需要异步收尾：等收尾完成后再返回（返回 = 已关闭）\n    return new Promise((resolve) => {\n      setTimeout(() => {\n        fs.appendFileSync(LOG, 'cleanup-finished\\n');\n        resolve();\n      }, 80);\n    });\n  },\n};\n";
 const HANG_CJS = "module.exports = {\n  start(ctx) { ctx.exposeArray('marks', ['started']); },\n  stop() { return new Promise(() => {}); },\n};\n";
@@ -22,7 +22,7 @@ test('停止协议：所有模块返回"已关闭"（stop() resolve）后核心�
     fs.writeFileSync(path.join(dir, 'ack.yaml'), yamlFor('ack', { startEvents: ['core:startup'] }));
     fs.writeFileSync(path.join(dir, 'plain.cjs'), PLAIN_CJS);
     fs.writeFileSync(path.join(dir, 'plain.yaml'), yamlFor('plain', { startEvents: ['core:startup'] }));
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false, stopTimeoutMs: 5000 });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false, stopTimeoutMs: 5000 });
     await core.start();
     const t0 = Date.now();
     await core.stop();
@@ -49,7 +49,7 @@ test('停止协议：模块超过 stopTimeoutMs 未返回"已关闭" -> 核心�
     fs.writeFileSync(path.join(dir, 'hang.yaml'), yamlFor('hang', { startEvents: ['core:startup'] }));
     fs.writeFileSync(path.join(dir, 'plain.cjs'), PLAIN_CJS);
     fs.writeFileSync(path.join(dir, 'plain.yaml'), yamlFor('plain', { startEvents: ['core:startup'] }));
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false, stopTimeoutMs: 300 });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false, stopTimeoutMs: 300 });
     await core.start();
     const t0 = Date.now();
     await core.stop();
@@ -70,7 +70,7 @@ test('停止协议：同步返回的 stop() 立即视为已关闭（协议不要
   try {
     fs.writeFileSync(path.join(dir, 'plain.cjs'), PLAIN_CJS);
     fs.writeFileSync(path.join(dir, 'plain.yaml'), yamlFor('plain', { startEvents: ['core:startup'] }));
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false, stopTimeoutMs: 60000 });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false, stopTimeoutMs: 60000 });
     await core.start();
     const t0 = Date.now();
     await core.stop();
@@ -95,7 +95,7 @@ test('停机进行中：事件与定向消息抛"正在关闭"，配置变更被
 `,
     );
     fs.writeFileSync(path.join(dir, 'slowstop.yaml'), yamlFor('slowstop', { startEvents: ['core:startup'] }));
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 50, stopTimeoutMs: 5000 });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 50, stopTimeoutMs: 5000 });
     await core.start();
     // 开始停机但不 await：停机窗口出现（slowstop 的 stop 挂 500ms）
     const stopPromise = core.stop();

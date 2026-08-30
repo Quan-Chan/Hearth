@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'path';
-import { ConnectCore } from '../../src/core/ConnectCore';
+import { Hearth } from '../../src/core/Hearth';
 import { mkTmpDir, rmDir, arr } from '../helpers';
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
@@ -14,7 +14,7 @@ const MODULE_DIR = path.join(ROOT, 'tests', 'fixtures', 'chat-bot', 'modules');
 test('聊天机器人：消息流转、命令应答、历史与用户数组', async () => {
   const tmp = mkTmpDir('chatbot');
   try {
-    const core = new ConnectCore({ moduleDir: MODULE_DIR, logFile: path.join(tmp, 'log.log'), watch: false });
+    const core = new Hearth({ moduleDir: MODULE_DIR, logFile: path.join(tmp, 'log.log'), watch: false });
     await core.start();
     // 5 个模块全部由 core:startup 自动启动
     assert.deepEqual(
@@ -61,7 +61,7 @@ test('聊天机器人：日志文件记录全部事件（原样记录所有发�
   const tmp = mkTmpDir('chatbot');
   try {
     const logFile = path.join(tmp, 'stream.log');
-    const core = new ConnectCore({ moduleDir: MODULE_DIR, logFile, watch: false });
+    const core = new Hearth({ moduleDir: MODULE_DIR, logFile, watch: false });
     await core.start();
     await core.sendEvent('chat:receive', { user: 'carol', room: 'hall', text: '!help' });
     await core.stop();

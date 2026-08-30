@@ -40,7 +40,7 @@ import { EventDispatcher } from './EventDispatcher';
 import { LOG_TYPES } from './logFormat';
 import type { LogType } from './logFormat';
 import type {
-  ConnectCoreOptions,
+  HearthOptions,
   DirectedMessage,
   ModuleConfig,
   ModuleRuntimeInfo,
@@ -51,11 +51,11 @@ const DEFAULT_MAX_LOG_MEMORY_ENTRIES = 20000;
 /** 停止等待上限的默认值（毫秒）：停机时等待全部模块返回"已关闭"的总时限，超时强制关闭。 */
 const DEFAULT_STOP_TIMEOUT_MS = 20000;
 
-export class ConnectCore {
+export class Hearth {
   /** 核心日志（只记录核心自己干的事情）。 */
   readonly log: EventStreamLog;
   /** 核心选项（已解析为绝对路径）。 */
-  readonly options: Required<ConnectCoreOptions>;
+  readonly options: Required<HearthOptions>;
 
   private arrays = new ArrayRegistry();
   private watcher?: ConfigWatcher;
@@ -69,10 +69,10 @@ export class ConnectCore {
   /** 事件派发器：事件广播与定向通道。 */
   private readonly dispatcher: EventDispatcher;
   /** 进程级守护：开启 guardProcess 的核心集合与已安装的处理句柄。 */
-  private static guardedCores = new Set<ConnectCore>();
+  private static guardedCores = new Set<Hearth>();
   private static processGuardInstalled = false;
 
-  constructor(options: ConnectCoreOptions = {}) {
+  constructor(options: HearthOptions = {}) {
     this.options = {
       moduleDir: path.resolve(options.moduleDir ?? './modules'),
       logFile: path.resolve(options.logFile ?? './logs/event-stream.log'),
@@ -112,18 +112,18 @@ export class ConnectCore {
    *  模块私下发起的异步失败与漏网的同步异常不再杀死进程，只进日志时间线。
    *  捕获 uncaughtException 后进程继续运行，宿主需自行权衡。 */
   private static installProcessGuard(): void {
-    if (ConnectCore.processGuardInstalled) return;
-    ConnectCore.processGuardInstalled = true;
+    if (Hearth.processGuardInstalled) return;
+    Hearth.processGuardInstalled = true;
     const fmt = (e: unknown): string => (e instanceof Error ? (e.stack ?? e.message) : String(e));
     process.on('unhandledRejection', (reason) => {
       const text = 'caught unhandled async failure (Promise): ' + fmt(reason);
-      if (ConnectCore.guardedCores.size === 0) console.error('[hearth] ' + text);
-      for (const core of ConnectCore.guardedCores) core.writeLog(LOG_TYPES.ERROR, 'core', text);
+      if (Hearth.guardedCores.size === 0) console.error('[hearth] ' + text);
+      for (const core of Hearth.guardedCores) core.writeLog(LOG_TYPES.ERROR, 'core', text);
     });
     process.on('uncaughtException', (err) => {
       const text = 'caught uncaught exception (process continues): ' + fmt(err);
-      if (ConnectCore.guardedCores.size === 0) console.error('[hearth] ' + text);
-      for (const core of ConnectCore.guardedCores) core.writeLog(LOG_TYPES.ERROR, 'core', text);
+      if (Hearth.guardedCores.size === 0) console.error('[hearth] ' + text);
+      for (const core of Hearth.guardedCores) core.writeLog(LOG_TYPES.ERROR, 'core', text);
     });
   }
 
@@ -133,8 +133,8 @@ export class ConnectCore {
     if (this.startedFlag) throw new Error('Hearth already started, do not start twice');
     this.startedFlag = true;
     if (this.options.guardProcess) {
-      ConnectCore.guardedCores.add(this);
-      ConnectCore.installProcessGuard();
+      Hearth.guardedCores.add(this);
+      Hearth.installProcessGuard();
     }
     this.writeLog(LOG_TYPES.CORE_START, 'core', 'core started');
 

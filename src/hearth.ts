@@ -21,11 +21,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { parse as parseYaml } from 'yaml';
 import { startCore } from './index';
-import type { ConnectCoreOptions } from './types';
+import type { HearthOptions } from './types';
 
 async function main(): Promise<void> {
   const configPath = path.resolve(process.argv[2] ?? 'hearth.yaml');
-  const options: ConnectCoreOptions = {};
+  const options: HearthOptions = {};
   if (fs.existsSync(configPath)) {
     const raw = parseYaml(fs.readFileSync(configPath, 'utf8')) as Record<string, any> | null;
     const coreCfg: Record<string, any> = (raw?.core ?? raw ?? {}) as Record<string, any>;

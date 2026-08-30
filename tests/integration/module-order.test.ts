@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ConnectCore } from '../../src/core/ConnectCore';
+import { Hearth } from '../../src/core/Hearth';
 import { mkTmpDir, rmDir } from '../helpers';
 
 /**
@@ -21,7 +21,7 @@ test('模块加载顺序按自然排序：m2 在 m10 前，alpha-2 在 alpha-10 
   const dir = mkTmpDir('nat');
   try {
     for (const m of ['m10', 'alpha-10', 'm2', 'alpha-2']) writeModule(dir, m);
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     await core.sendEvent('go');
     const reg = core.listModules().map((m) => m.name);

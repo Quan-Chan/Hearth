@@ -6,7 +6,7 @@
  *   3. 取消公开数组    -> unexposeArray
  *   4. 拉取特定数组    -> array（返回被映射对象引用，原生数组语法，一次修改处处有效）
  */
-import type { ConnectCore } from './ConnectCore';
+import type { Hearth } from './Hearth';
 import type { ModuleConfig } from '../types';
 import { arrayKey, ARRAY_KEY_PREFIX } from './ArrayRegistry';
 
@@ -18,9 +18,9 @@ export class ModuleContext {
     return this._config;
   }
   private _config: ModuleConfig;
-  private core: ConnectCore;
+  private core: Hearth;
 
-  constructor(core: ConnectCore, moduleName: string, config: ModuleConfig) {
+  constructor(core: Hearth, moduleName: string, config: ModuleConfig) {
     this.core = core;
     this.moduleName = moduleName;
     this._config = config;

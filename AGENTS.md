@@ -35,7 +35,7 @@ Hearth 是一个事件驱动的模块化框架核心，运行在 Node.js 上，�
 Hearth/
 ├── src/                      # TypeScript 源码
 │   ├── core/                 # 核心实现
-│   │   ├── ConnectCore.ts    # 主类：生命周期/配置热加载/数组API/查询，委托下两者
+│   │   ├── Hearth.ts    # 主类：生命周期/配置热加载/数组API/查询，委托下两者
 │   │   ├── ModuleManager.ts  # 模块状态机：启动/停止/重启/停机收尾 + 槽位表
 │   │   ├── EventDispatcher.ts# 事件派发与定向通道（sendEvent/sendDirected/sendTo）
 │   │   ├── ConfigWatcher.ts  # 模块文件夹轮询监听 + YAML 解析（200ms 指纹轮询）

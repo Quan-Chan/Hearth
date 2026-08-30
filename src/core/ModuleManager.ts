@@ -5,7 +5,7 @@
  *  - 持有全部模块槽位（modules Map）与注册序号（slotSeq）；
  *  - 启动/停止/重启单个模块（startModule/stopModule/reloadModule）；
  *  - 核心停机时并行停止全部模块并等待"已关闭"（stopAll，超时强制关闭）；
- *  - 配置热加载的槽位增删改（register/applyUpdate/remove，由 ConnectCore 的
+ *  - 配置热加载的槽位增删改（register/applyUpdate/remove，由 Hearth 的
  *    handleConfig* 调用，索引重建与日志由调用方负责）。
  *
  * 启动过程的关键机制：
@@ -14,14 +14,14 @@
  *  - 启动超时（startTimeoutMs）：超时只放弃等待并锁定自动重试，悬挂的启动函数
  *    无法终止（JS 没有强杀手段），重复尝试只会堆积。
  *
- * 依赖注入：构造时传入 ConnectCore 实例（只做类型引用，无运行时循环），
+ * 依赖注入：构造时传入 Hearth 实例（只做类型引用，无运行时循环），
  * 经由 core 访问日志出口（writeLog）、选项（options）、停机标记（stopping）与
  * 数组注销（removeOwnerArrays）。
  */
 import { ModuleContext } from './ModuleContext';
 import { LOG_TYPES } from './logFormat';
 import { loadModuleProgram } from '../module/loadModule';
-import type { ConnectCore } from './ConnectCore';
+import type { Hearth } from './Hearth';
 import type { ModuleConfig, ModuleDefinition, ModuleSlot } from '../types';
 
 /** 判定是否为"人为/配置驱动"的启动：这类启动可解除启动超时后的自动重试锁定。 */
@@ -50,7 +50,7 @@ export class ModuleManager {
   /** 槽位序号：注册顺序即模块加载顺序（索引查找后按 seq 恢复顺序）。 */
   private slotSeq = 0;
 
-  constructor(private readonly core: ConnectCore) {}
+  constructor(private readonly core: Hearth) {}
 
   /** 全部槽位（按注册顺序）：重建比对索引与收集派发目标时使用。 */
   slots(): ModuleSlot[] {
@@ -321,7 +321,7 @@ export class ModuleManager {
 
   /** 配置加载：注册新模块槽位。模块名已被其他 YAML 占用时拒绝（返回 false）——
    *  名字是模块的身份标识，允许顶替等于允许"伪装成同名模块"上线（防注入）。
-   *  注册只维护槽位表；索引重建与 config-load 日志由调用方（ConnectCore）负责。 */
+   *  注册只维护槽位表；索引重建与 config-load 日志由调用方（Hearth）负责。 */
   register(cfg: ModuleConfig, yamlPath: string): boolean {
     if (this.modules.has(cfg.name)) return false;
     this.modules.set(cfg.name, {
@@ -339,7 +339,7 @@ export class ModuleManager {
    *   - 更新槽位注册（config 字段）与启动代数（旧代启动全部作废）；
    *   - 运行中的模块：刷新其 ctx.config 引用（模块自行决定何时读取/如何应用新配置）；
    *   - 别的文件来抢同名模块名（yamlPath 不同）返回 false —— 拒绝顶替，防同名伪装。
-   *  索引重建、config-update 日志与 enabled:false 的停止决策由调用方（ConnectCore）负责。 */
+   *  索引重建、config-update 日志与 enabled:false 的停止决策由调用方（Hearth）负责。 */
   async applyUpdate(cfg: ModuleConfig, yamlPath: string): Promise<boolean> {
     const prev = this.modules.get(cfg.name);
     // 同名不同文件：本文件不是该模块名当前归属的 YAML，拒绝应用（模块名全库不允许重复，先注册者保留）
@@ -363,7 +363,7 @@ export class ModuleManager {
   }
 
   /** 配置移除：停止运行中的模块后删除槽位。
-   *  索引重建与 config-remove 日志由调用方（ConnectCore）负责。 */
+   *  索引重建与 config-remove 日志由调用方（Hearth）负责。 */
   async remove(name: string): Promise<void> {
     const slot = this.modules.get(name);
     if (!slot) return;

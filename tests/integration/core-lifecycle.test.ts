@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ConnectCore } from '../../src/core/ConnectCore';
+import { Hearth } from '../../src/core/Hearth';
 import { mkTmpDir, rmDir, arr, yamlFor } from '../helpers';
 
 /** 生成一组生命周期测试模块夹具。 */
@@ -71,8 +71,8 @@ function makeFixtures(dir: string): void {
   fs.writeFileSync(path.join(dir, 'badhandler.yaml'), yamlFor('badhandler', { startEvents: ['core:startup'], listen: ['*:chat:message'] }));
 }
 
-function makeCore(dir: string): ConnectCore {
-  return new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+function makeCore(dir: string): Hearth {
+  return new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
 }
 
 test('启动核心 == 启动整个软件：core:startup 自动启动匹配模块', async () => {

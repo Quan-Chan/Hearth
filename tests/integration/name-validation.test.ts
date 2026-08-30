@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ConnectCore } from '../../src/core/ConnectCore';
+import { Hearth } from '../../src/core/Hearth';
 import { EventStreamLog } from '../../src/core/EventStreamLog';
 import { mkTmpDir, rmDir } from '../helpers';
 
@@ -18,7 +18,7 @@ test('模块名含冒号：配置解析抛错', () => {
   try {
     fs.writeFileSync(path.join(dir, 'a.cjs'), 'module.exports = { start() {} };');
     fs.writeFileSync(path.join(dir, 'a.yaml'), 'name: "my:mod"\nfile: ./a.cjs\n');
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 30 });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 30 });
     return core.start().then(() => {
       // 坏配置记 error，模块不注册
       return new Promise<void>((resolve) => {
@@ -37,7 +37,7 @@ test('模块名含冒号：配置解析抛错', () => {
 test('数组名含冒号：expose 抛错', async () => {
   const dir = mkTmpDir('arrname');
   try {
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     assert.throws(() => core.exposeArray('a:b', 'owner', []), /must not contain/);
     await core.stop();
@@ -66,7 +66,7 @@ test('同一日志文件不允许两个实例', async () => {
 test('rescanModules 返回是否真正执行', async () => {
   const dir = mkTmpDir('rescan');
   try {
-    const core = new ConnectCore({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
     // watch:false 时手动扫描：第一次执行返回 true
     fs.writeFileSync(path.join(dir, 'm.cjs'), 'module.exports = { start() {} };');

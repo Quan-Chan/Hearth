@@ -8,14 +8,14 @@
  * 划分：核心只做"执行指令 + 回传结果"的协议，界面、解析、日志展示归可选的 cli 模块端。
  */
 import { LOG_TYPES } from './logFormat';
-import type { ConnectCore } from './ConnectCore';
+import type { Hearth } from './Hearth';
 import type { DirectedMessage } from '../types';
 
 /** 指令处理器：解析参数、执行、把结果写进 result.result；抛错由 handleDirected 统一捕获。 */
 type CliHandler = (args: Record<string, unknown>, result: Record<string, unknown>, source: string) => Promise<void>;
 
 export class CliProtocol {
-  private readonly core: ConnectCore;
+  private readonly core: Hearth;
 
   /** 指令派发表：cmd -> 处理器。新增指令只加一个条目，解析/执行/回传的公共骨架
    *  （handleDirected）保持不变；每个处理器做三件事——解析参数、执行、把结果写进 result.result。 */
@@ -66,7 +66,7 @@ export class CliProtocol {
     },
   };
 
-  constructor(core: ConnectCore) {
+  constructor(core: Hearth) {
     this.core = core;
   }
 
