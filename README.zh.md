@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/Quan-Chan/Hearth/actions/workflows/ci.yml/badge.svg)](https://github.com/Quan-Chan/Hearth/actions/workflows/ci.yml)
 
-**版本 0.1.0（预发布）**
+版本 0.1.0（预发布）
 
 Hearth 是一个事件驱动的模块化框架核心，运行在 Node.js 上，使用 TypeScript 编写。
 

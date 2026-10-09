@@ -1,7 +1,7 @@
 /**
  * Hearth 核心：框架的中间层，同时是软件的核心层。
  *
- * 职责（对应 docs/需求.md 的框架核心方法）：
+ * 职责：
  *   1. 启动模块        -> startModule（委托 ModuleManager）
  *   2. 关闭模块        -> stopModule（委托 ModuleManager；关闭时其公开对象自动取消映射）
  *   3. 发送事件消息    -> sendEvent（委托 EventDispatcher：启动匹配模块 + 向监听模块转发）

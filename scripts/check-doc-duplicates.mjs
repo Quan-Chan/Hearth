@@ -6,6 +6,7 @@ import * as path from 'path';
 
 function walk(dir, out) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.isDirectory() && e.name === 'dev') continue; // 开发时文档不参与查重
     const p = path.join(dir, e.name);
     if (e.isDirectory()) walk(p, out);
     else if (e.name.endsWith('.md')) out.push(p);

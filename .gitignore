@@ -3,6 +3,6 @@ dist/
 logs/
 *.log
 *.jsonl
-work/
 .test-build/
-.npm-cache/
+.tmp/
+docs/dev/

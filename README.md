@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/Quan-Chan/Hearth/actions/workflows/ci.yml/badge.svg)](https://github.com/Quan-Chan/Hearth/actions/workflows/ci.yml)
 
-**Version 0.1.0 (pre-release)**
+Version 0.1.0 (pre-release)
 
 Hearth is an event-driven modular framework core running on Node.js, written in TypeScript.
 
