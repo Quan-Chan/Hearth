@@ -50,7 +50,7 @@ Source:
 
 Symptom (old behavior):
 
-- If any module's stop() did not return, the stops of the modules behind it, shared array cleanup, and log finalization all had to wait for it
+- If any module's stop() did not return, the stops of the modules behind it, shared object cleanup, and log finalization all had to wait for it
 - A module that deliberately waits 3 seconds dragged shutdown from milliseconds to 3 seconds
 
 Fix:
@@ -153,36 +153,36 @@ Source:
 - The in-memory window has a fixed capacity; beyond it the oldest entries are evicted
 - On-disk files are unaffected
 
-## 6. Shared Arrays
+## 6. Shared Objects
 
-### 12. When the owner stops or restarts, the array disappears by name immediately
+### 12. When the owner stops or restarts, the object disappears by name immediately
 
 Symptom:
 
-- The moment the owner's stop() finishes executing, other callers of array(name) get an error
-- Code that already holds a reference can still operate on the original array object; only new code can no longer find it by name
+- The moment the owner's stop() finishes executing, other callers of object(name) get an error
+- Code that already holds a reference can still operate on the original object; only new code can no longer find it by name
 - Hot-reloading and restarting the owner goes through the same disappearance and recreation
 
 Source:
 
-- The array mapping's lifecycle is bound to the owner; when the owner disappears, the mapping is unregistered
+- The object mapping's lifecycle is bound to the owner; when the owner disappears, the mapping is unregistered
 
-### 13. Array content can grow without bound and is not persisted
+### 13. Object content can grow without bound and is not persisted
 
 Symptom:
 
-- An array that only pushes and never cleans keeps consuming memory
+- An object that only receives pushes and is never cleaned keeps consuming memory
 - After the core shuts down or the owner stops, the content is lost directly
 
 Source:
 
-- Arrays are shared plain objects: no capacity limit, no on-disk mechanism
+- Shared objects are plain object references: no capacity limit, no on-disk mechanism
 
-### 14. Management operations on another's array get an error
+### 14. Management operations on another's object get an error
 
 Symptom:
 
-- Calling exposeArray or unexposeArray on a name that is not one's own public name throws an "already exists / does not exist / not permitted" style error
+- Calling exposeObject or unexposeObject on a name that is not one's own public name throws an "already exists / does not exist / not permitted" style error
 - Reading and writing content is not subject to this restriction
 
 Source:
@@ -262,7 +262,7 @@ Source:
 Symptom:
 
 - Any module can issue management instructions to the core: start or stop other modules, generate arbitrary events
-- Any module can read and write the content of all shared arrays
+- Any module can read and write the content of all shared objects
 
 Source:
 

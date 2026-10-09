@@ -3,13 +3,13 @@
  *
  * 职责（对应 docs/需求.md 的框架核心方法）：
  *   1. 启动模块        -> startModule（委托 ModuleManager）
- *   2. 关闭模块        -> stopModule（委托 ModuleManager；关闭时其公开数组自动取消映射）
+ *   2. 关闭模块        -> stopModule（委托 ModuleManager；关闭时其公开对象自动取消映射）
  *   3. 发送事件消息    -> sendEvent（委托 EventDispatcher：启动匹配模块 + 向监听模块转发）
  * 框架其余功能：
  *   - 自产事件：核心启动时产生 "core:startup"
  *   - 监听模块文件夹：ConfigWatcher 热加载 YAML（新增/修改/删除）
  *   - 日志：只记录核心自己干的事情（三字段：type/source/message，见 logFormat.ts）
- *   - 公共数组：映射关系，公开者把数组对象映射到名字，所有人共享同一对象
+ *   - 公共对象：映射关系，公开者把对象映射到名字，所有人共享同一对象
  *   - CLI 指令协议：委托给 CliProtocol（独立文件）；目标为 core 的定向信息被转交
  *
  * 启动核心 == 启动整个软件：core.start() 会扫描模块配置并发出 core:startup，
@@ -24,7 +24,7 @@
  *   stop() -> 逐个调用模块 stop() 等返回"已关闭"（超时强制关闭）-> 关闭日志。
  *
  * 文件组织（一个文件 = 一个功能部分）：
- *   - 本文件：核心类本体 —— 生命周期 / 配置热加载 / 公共数组 API / 查询 / 委托；
+ *   - 本文件：核心类本体 —— 生命周期 / 配置热加载 / 公共对象 API / 查询 / 委托；
  *   - ModuleManager.ts：模块状态机（启动/停止/重启/停机收尾 + 槽位表）；
  *   - EventDispatcher.ts：事件派发与定向通道（sendEvent/sendDirected/sendTo）；
  *   - CliProtocol.ts：CLI 指令协议（定向指令 + 结果回传），独立成文件；
@@ -32,7 +32,7 @@
  */
 import * as path from 'path';
 import { EventStreamLog } from './EventStreamLog';
-import { ArrayRegistry } from './ArrayRegistry';
+import { ObjectRegistry } from './ObjectRegistry';
 import { ConfigWatcher } from './ConfigWatcher';
 import { CliProtocol } from './CliProtocol';
 import { ModuleManager } from './ModuleManager';
@@ -57,7 +57,7 @@ export class Hearth {
   /** 核心选项（已解析为绝对路径）。 */
   readonly options: Required<HearthOptions>;
 
-  private arrays = new ArrayRegistry();
+  private objects = new ObjectRegistry();
   private watcher?: ConfigWatcher;
   private startedFlag = false;
   /** CLI 指令协议处理器（惰性创建：只有真的收到定向指令才实例化，普通核心不创建）。 */
@@ -171,8 +171,8 @@ export class Hearth {
     // 停机集合会边关边长；冻结文件面后模块集合固定，stopAll 关的就是全集。
     await this.watcher?.stop();
     await this.manager.stopAll();
-    // 收尾：核心自身的数组也遵守"拥有者消失即注销"的数组规则。
-    this.arrays.removeOwner('core');
+    // 收尾：核心自身的对象也遵守"拥有者消失即注销"的规则。
+    this.objects.removeOwner('core');
     this.startedFlag = false;
     this.stoppingFlag = false;
     this.writeLog(LOG_TYPES.CORE_STOP, 'core', 'core stopped');
@@ -193,7 +193,7 @@ export class Hearth {
     return this.manager.startModule(name, reason);
   }
 
-  /** 请求自身重启（见 ModuleManager.reloadModule）。返回是否完成替换。 */
+  /** 请求自身重启（见 ModuleManager.reloadModule）。返回重启后模块是否处于运行态。 */
   async reloadModule(name: string): Promise<boolean> {
     return this.manager.reloadModule(name);
   }
@@ -295,26 +295,29 @@ export class Hearth {
     this.writeLog(LOG_TYPES.CONFIG_REMOVE, name, 'config removed');
   }
 
-  // ==================== 公共数组（映射关系） ====================
+  // ==================== 公共对象（映射关系） ====================
 
-  /** 公开数组：把模块的数组对象映射到名字（name 为第三段，前两段自动拼装，存引用不拷贝）。 */
-  exposeArray(name: string, owner: string, items: unknown[] = []): void {
-    this.arrays.expose(name, owner, items);
+  /** 公开对象：把模块的对象映射到名字（name 为第三段，前两段自动拼装，存引用不拷贝）。
+   *  停机期间冻结对象面：拒绝新的映射（与事件面同规则），停机收尾后不再有对象被登记进来。
+   *  取消映射不设此检查：它只删除已有映射，注册表在停机收尾时已清空，删除请求本身不留下状态。 */
+  exposeObject(name: string, owner: string, value: object = {}): void {
+    if (this.stoppingFlag) throw new Error('Hearth is stopping, cannot expose shared object');
+    this.objects.expose(name, owner, value);
   }
 
-  /** 取消公开数组（仅拥有者）。 */
-  unexposeArray(name: string, owner: string): void {
-    this.arrays.unexpose(name, owner);
+  /** 取消公开对象（仅拥有者）。 */
+  unexposeObject(name: string, owner: string): void {
+    this.objects.unexpose(name, owner);
   }
 
-  /** 匹配拉取：模式不含通配符 -> 返回该数组引用；含通配符 -> 返回 { 数组全名: 引用 }。 */
-  array<T = any>(pattern: string): T[] | Record<string, T[]> {
-    return this.arrays.get<T>(pattern);
+  /** 匹配拉取：模式不含通配符 -> 返回该对象引用；含通配符 -> 返回 { 对象全名: 引用 }。 */
+  object<T extends object = Record<string, unknown>>(pattern: string): T | Record<string, T> {
+    return this.objects.get<T>(pattern);
   }
 
-  /** 注销某拥有者的全部数组映射（@internal）：供 ModuleManager 在模块停止时调用。 */
-  removeOwnerArrays(owner: string): string[] {
-    return this.arrays.removeOwner(owner);
+  /** 注销某拥有者的全部对象映射（@internal）：供 ModuleManager 在模块停止时调用。 */
+  removeOwnerObjects(owner: string): string[] {
+    return this.objects.removeOwner(owner);
   }
 
   // ==================== 查询与模块日志 ====================

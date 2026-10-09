@@ -41,7 +41,7 @@ Rules for applying config changes:
 
 ## 3. Communication mechanism
 
-Information exchange between modules goes through three channels: event broadcast, directed messages, shared arrays.
+Information exchange between modules goes through three channels: event broadcast, directed messages, shared objects.
 
 ### 3.1 Event broadcast
 
@@ -73,17 +73,17 @@ A module can send messages to a specified module, passing through the core in be
 - The core is addressable as a target: it serves as the management command entry, and results are returned directly to the initiator
 - Request-response is supported: the responder replies directly to the requester; multiple requesters do not interfere with each other
 
-### 3.3 Shared arrays
+### 3.3 Shared objects
 
-A module can expose an array, and other modules can fetch it. Rules:
+A module can expose an object, and other modules can fetch it. Rules:
 
-- What is exposed is the array object reference, not a copy
-- Other modules can modify the original array content directly; the modification is immediately visible to all holders
-
+- What is exposed is the object reference, not a copy
+- Other modules can modify the original object content directly; the modification is immediately visible to all holders
+- The value must be a non-null object
 - Un-exposing can only be performed by the owner
-- When the module that exposed the array is closed, the array disappears with it
-- Array capacity and persistence are the responsibility of the user
-- Array operations are not logged: arrays are a business data channel that may be read and written at high frequency, and per-record logging would blow up the log
+- When the module that exposed the object is closed, the object disappears with it
+- Object capacity and persistence are the responsibility of the user
+- Object operations are not logged: shared objects are a business data channel that may be read and written at high frequency, and per-record logging would blow up the log
 
 ## 4. Module lifecycle
 
@@ -160,7 +160,7 @@ Rules:
 The log only records what the core framework itself does. Entry structure:
 
 - Each log entry contains three items: log type, log source, log message
-- Additional structured fields: event name, data, forwarding list, reason, error, file name, cleanup arrays
+- Additional structured fields: event name, data, forwarding list, reason, error, file name, cleanup objects
 
 Storage and display:
 
@@ -168,7 +168,8 @@ Storage and display:
 - Two-layer storage: memory keeps the most recent entries, the complete set is written to a JSONL file
 - Disk files rotate by day and size; the current file is reused after a process restart
 - The written content is complete; the display layer shortens overlong content and marks the original length
-- Array operations are not logged
+- When data cannot be serialized (circular references and similar), the written entry drops data and marks dataDropped: unserializable while the other fields are written as usual; the in-memory copy keeps the original value
+- Object operations are not logged
 - A module can write logs on its own, with the type module log
 - Logs can be output to the console synchronously
 
@@ -192,7 +193,7 @@ Commands:
 - start: start a module
 - stop: stop a module
 - send: send directed events, supporting broadcast and multiple targets
-- state: query modules and public arrays
+- state: query modules and public objects
 - exit: deliver the result first, then shut down the core
 - log: view the log timeline, filtered by keyword and count
 
@@ -203,7 +204,7 @@ Commands:
 Capabilities available to the host:
 
 - Create and start the core
-- Query: module list, single module state, array list (wildcard fetch)
+- Query: module list, single module state, object list (wildcard fetch)
 - Manage: start a module, stop a module, restart a module, manual rescan, send an event, directed send
 
 Configurable options of the core:
@@ -227,7 +228,7 @@ A user-controllable demo software should be provided to make the framework's beh
 ## 11. Collaboration structure
 
 - Dependencies between modules are established at runtime through events; modules are unaware of each other
-- Collaboration between modules uses event signals and shared arrays
+- Collaboration between modules uses event signals and shared objects
 - Modules can still use any external channel such as files, network, and subprocesses
 - A single minimal central file manages a large number of plugins
 

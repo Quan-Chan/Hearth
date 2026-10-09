@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * Hearth 启动入口：命令行启动方式。
  *

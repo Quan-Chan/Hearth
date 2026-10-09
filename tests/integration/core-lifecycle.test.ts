@@ -3,20 +3,20 @@ import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Hearth } from '../../src/core/Hearth';
-import { mkTmpDir, rmDir, arr, yamlFor } from '../helpers';
+import { mkTmpDir, rmDir, items, yamlFor } from '../helpers';
 
 /** 生成一组生命周期测试模块夹具。 */
 function makeFixtures(dir: string): void {
-  // boot：core:startup 启动，暴露数组并记录收到的事件
+  // boot：core:startup 启动，暴露对象并记录收到的事件
   fs.writeFileSync(
     path.join(dir, 'boot.cjs'),
     `module.exports = {
   name: 'boot',
   start(ctx) {
-    ctx.exposeArray('marks', ['started']);
+    ctx.exposeObject('marks', { items: ['started'] });
   },
   onEvent(ctx, event) {
-    ctx.array('marks').push(event.name);
+    ctx.object('marks').items.push(event.name);
   },
 };
 `,
@@ -27,10 +27,10 @@ function makeFixtures(dir: string): void {
     `module.exports = {
   name: 'lazy',
   onEvent(ctx, event) {
-    ctx.array('marks').push(event.name);
+    ctx.object('marks').items.push(event.name);
   },
   start(ctx) {
-    ctx.exposeArray('marks', ['lazy-started']);
+    ctx.exposeObject('marks', { items: ['lazy-started'] });
   },
 };
 `,
@@ -40,8 +40,8 @@ function makeFixtures(dir: string): void {
     path.join(dir, 'wild.cjs'),
     `module.exports = {
   name: 'wild',
-  start(ctx) { ctx.exposeArray('marks', []); },
-  onEvent(ctx, event) { ctx.array('marks').push(event.name); },
+  start(ctx) { ctx.exposeObject('marks', { items: [] }); },
+  onEvent(ctx, event) { ctx.object('marks').items.push(event.name); },
 };
 `,
   );
@@ -59,7 +59,7 @@ function makeFixtures(dir: string): void {
     path.join(dir, 'badhandler.cjs'),
     `module.exports = {
   name: 'badhandler',
-  start(ctx) { ctx.exposeArray('marks', []); },
+  start(ctx) { ctx.exposeObject('marks', { items: [] }); },
   onEvent() { throw new Error('badhandler 处理出错'); },
 };
 `,
@@ -86,8 +86,8 @@ test('启动核心 == 启动整个软件：core:startup 自动启动匹配模块
     assert.equal(core.getModule('wild')!.status, 'running');
     assert.equal(core.getModule('boom')!.status, 'failed');
     assert.equal(core.getModule('lazy')!.status, 'stopped'); // 启动事件未出现
-    // 启动时暴露的数组可用
-    assert.deepEqual(arr(core as any, 'public:boot:marks'), ['started']);
+    // 启动时暴露的对象可用
+    assert.deepEqual(items(core as any, 'public:boot:marks'), ['started']);
     // 日志：核心启动事件原样记录（无模块监听 -> 记录为 event-drop）
     const drops = core.log.byType('event-drop');
     assert.equal(drops[0].message, 'core:startup');
@@ -108,17 +108,17 @@ test('事件路由：精确匹配 + 通配符匹配，非监听者不收', async
     const core = makeCore(dir);
     await core.start();
     await core.sendEvent('chat:message', { text: 'hi' }, 'tester');
-    assert.deepEqual(arr(core as any, 'public:boot:marks'), ['started', 'tester:chat:message']);
+    assert.deepEqual(items(core as any, 'public:boot:marks'), ['started', 'tester:chat:message']);
     // badhandler 也监听 chat:message：它抛错，但日志记录且不影响其他模块
     assert.equal(core.log.byType('error').filter((e) => String(e.message).includes('failed to handle event')).length, 1);
     // wild 通配符收不到 chat:message
-    assert.deepEqual(arr(core as any, 'public:wild:marks'), []);
+    assert.deepEqual(items(core as any, 'public:wild:marks'), []);
     await core.sendEvent('wild:ping');
-    assert.deepEqual(arr(core as any, 'public:wild:marks'), ['external:wild:ping']);
+    assert.deepEqual(items(core as any, 'public:wild:marks'), ['external:wild:ping']);
     // lazy 未启动，收不到事件
     await core.sendEvent('lazy:go', { v: 1 }, 'tester');
     assert.equal(core.getModule('lazy')!.status, 'running'); // 事件触发启动
-    assert.deepEqual(arr(core as any, 'public:lazy:marks'), ['lazy-started', 'tester:lazy:go']); // 启动后也收到了事件
+    assert.deepEqual(items(core as any, 'public:lazy:marks'), ['lazy-started', 'tester:lazy:go']); // 启动后也收到了事件
     await core.stop();
   } finally {
     rmDir(dir);
@@ -164,11 +164,11 @@ test('模块失败隔离：启动失败/事件处理失败不影响核心与其�
     assert.equal(core.log.byType('error').filter((e) => String(e.message).includes('start failed')).length, 1);
     // 核心仍然工作
     await core.sendEvent('wild:ok');
-    assert.deepEqual(arr(core as any, 'public:wild:marks'), ['external:wild:ok']);
+    assert.deepEqual(items(core as any, 'public:wild:marks'), ['external:wild:ok']);
     // badhandler 抛错被记录，boot 仍收到事件
     await core.sendEvent('chat:message', { text: 'x' });
     assert.equal(core.log.byType('error').filter((e) => String(e.message).includes('failed to handle event')).length, 1);
-    assert.deepEqual(arr(core as any, 'public:boot:marks'), ['started', 'external:chat:message']);
+    assert.deepEqual(items(core as any, 'public:boot:marks'), ['started', 'external:chat:message']);
     await core.stop();
   } finally {
     rmDir(dir);

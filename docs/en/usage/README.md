@@ -15,13 +15,13 @@ The core continuously watches the module folder. YAML additions, modifications, 
 
 - Event broadcast: an event name plus optional data, sent to all modules that declared reception
 - Directed message: send content to a specified target; the target is validated by the core
-- Shared array: map an array object to a name; other modules pull it by name or pattern
+- Shared object: map an object to a name; other modules pull it by name or pattern
 
 ## Two Naming Conventions
 
 Event names use two segments: source:event-name. The source segment is assembled automatically by the core (module name when a module emits, core for core-generated events, external for host calls); modules only write the event name segment. Matching uses the full event name; to respond to an event with the same name from any source, use a wildcard such as *:greet.
 
-Array names use three segments: public:module-name:array-name. When exposing and unexposing, modules only provide the third segment (the array name); the first two segments are assembled automatically.
+Object names use three segments: public:module-name:object-name. When exposing and unexposing, modules only provide the third segment (the object name); the first two segments are assembled automatically.
 
 ## Quick Start
 
@@ -33,7 +33,7 @@ A module consists of two files: YAML declares name, file, startEvents, and liste
 - Module Program and Context Methods: docs/en/usage/module-program.md
 - Event Broadcast: docs/en/usage/event-broadcast.md
 - Directed Message: docs/en/usage/directed-message.md
-- Shared Arrays: docs/en/usage/shared-arrays.md
+- Shared Objects: docs/en/usage/shared-objects.md
 - Restart and Status: docs/en/usage/restart-and-status.md
 - Logs and CLI: docs/en/usage/logs-and-cli.md
 - Host Integration: docs/en/usage/host-integration.md

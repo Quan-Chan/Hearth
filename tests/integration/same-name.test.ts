@@ -9,26 +9,26 @@ import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Hearth } from '../../src/core/Hearth';
-import { mkTmpDir, rmDir, waitFor, arr, yamlFor } from '../helpers';
+import { mkTmpDir, rmDir, waitFor, items, yamlFor } from '../helpers';
 
 const IDENTITY_A = `module.exports = {
-  start(ctx) { ctx.exposeArray('owner', ['a']); },
-  onEvent(ctx, event) { if (event.name.endsWith(':same:ping')) ctx.array('owner').push('a-ping'); },
+  start(ctx) { ctx.exposeObject('owner', { items: ['a'] }); },
+  onEvent(ctx, event) { if (event.name.endsWith(':same:ping')) ctx.object('owner').items.push('a-ping'); },
 };
 `;
 
 const IDENTITY_UPDATE = `module.exports = {
-  start(ctx) { ctx.exposeArray('owner', ['a']); },
+  start(ctx) { ctx.exposeObject('owner', { items: ['a'] }); },
   onEvent(ctx, event) {
-    if (event.name.endsWith(':same:ping')) ctx.array('owner').push('a-ping');
-    if (event.name.endsWith(':same:ping2')) ctx.array('owner').push('a-ping2');
+    if (event.name.endsWith(':same:ping')) ctx.object('owner').items.push('a-ping');
+    if (event.name.endsWith(':same:ping2')) ctx.object('owner').items.push('a-ping2');
   },
 };
 `;
 
 const IDENTITY_B = `module.exports = {
-  start(ctx) { ctx.exposeArray('owner', ['b']); },
-  onEvent(ctx, event) { if (event.name.endsWith(':same:ping')) ctx.array('owner').push('b-ping'); },
+  start(ctx) { ctx.exposeObject('owner', { items: ['b'] }); },
+  onEvent(ctx, event) { if (event.name.endsWith(':same:ping')) ctx.object('owner').items.push('b-ping'); },
 };
 `;
 
@@ -49,7 +49,7 @@ test('同名模块：第二个文件被拒绝注册，先注册者保留，拒�
     assert.equal(core.listModules().length, 1);
     assert.equal(core.getModule('identity')!.status, 'running');
     await core.sendEvent('same:ping');
-    assert.deepEqual(arr(core as any, 'public:identity:owner'), ['a', 'a-ping']);
+    assert.deepEqual(items(core as any, 'public:identity:owner'), ['a', 'a-ping']);
     const errs = core.log.byType('error');
     assert.ok(errs.some((e) => String(e.message).includes('duplicate module names')));
     await core.stop();
@@ -78,7 +78,7 @@ test('同名模块：先注册者消失后，被拒者获得注册资格（让�
     assert.equal(core.getModule('identity')!.status, 'stopped');
     await core.startModule('identity');
     await waitFor(() => core.getModule('identity')!.status === 'running');
-    assert.deepEqual(arr(core as any, 'public:identity:owner'), ['b']);
+    assert.deepEqual(items(core as any, 'public:identity:owner'), ['b']);
     await core.stop();
   } finally {
     rmDir(dir);
@@ -98,7 +98,7 @@ test('同名模块：同文件更新不受影响，仍正常应用', async () =>
     await waitFor(() => core.log.byType('config-update').length >= 1);
     assert.equal(core.listModules().length, 1);
     await core.sendEvent('same:ping2');
-    assert.deepEqual(arr(core as any, 'public:identity:owner'), ['a', 'a-ping2']);
+    assert.deepEqual(items(core as any, 'public:identity:owner'), ['a', 'a-ping2']);
     await core.stop();
   } finally {
     rmDir(dir);

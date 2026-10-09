@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Hearth } from '../../src/core/Hearth';
-import { mkTmpDir, rmDir, waitFor, yamlFor } from '../helpers';
+import { mkTmpDir, rmDir, waitFor, items, yamlFor } from '../helpers';
 
 /** 启动函数永不返回的模块（模拟悬挂启动）。 */
 const HANG_CJS = 'module.exports = { start() { return new Promise(() => {}); } };';
@@ -93,9 +93,36 @@ test('启动超时：CLI 指令启动（reason=cli）也可解锁重试', async 
   }
 });
 
+test('启动超时锁定：配置更新可解锁重试', async () => {
+  const dir = mkTmpDir('to-config');
+  try {
+    const yamlPath = path.join(dir, 'hangonce.yaml');
+    fs.writeFileSync(path.join(dir, 'hangonce.cjs'), HANG_ONCE_CJS);
+    fs.writeFileSync(yamlPath, yamlFor('hangonce', { startEvents: ['*:go'], extra: 'startTimeoutMs: 100' }));
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 40 });
+    await core.start();
+    // 第一次启动：悬挂 -> 超时 -> failed + 锁定
+    await core.startModule('hangonce', 'manual');
+    assert.equal(core.getModule('hangonce')!.status, 'failed');
+    // 事件触发被锁：状态不变
+    await core.sendEvent('go');
+    assert.equal(core.getModule('hangonce')!.status, 'failed');
+    // 改写 YAML 触发配置更新：锁定解除（模块不重启）
+    fs.writeFileSync(yamlPath, yamlFor('hangonce', { startEvents: ['*:go'], listen: ['*:go'], extra: 'startTimeoutMs: 100' }));
+    await waitFor(() => core.log.byType('config-update').some((l) => l.source === 'hangonce'));
+    // 锁定已解除：事件再次触发时第二次启动完成（start 第二次不再悬挂）
+    await core.sendEvent('go');
+    await waitFor(() => core.getModule('hangonce')!.status === 'running');
+    await core.stop();
+  } finally {
+    rmDir(dir);
+  }
+});
+
+
 /** start 永不返回 + 一个正常模块（启动挂起测试用）。 */
 const HANG_START_CJS = 'module.exports = { start() { return new Promise(() => {}); } };';
-const OK_CJS = 'module.exports = { name: "ok", start(ctx) { ctx.exposeArray("m", []); }, onEvent(ctx, e) { ctx.array("m").push(e.name); } };';
+const OK_CJS = 'module.exports = { name: "ok", start(ctx) { ctx.exposeObject("m", { items: [] }); }, onEvent(ctx, e) { ctx.object("m").items.push(e.name); } };';
 
 test('启动挂起：状态停在 starting，未配置超时则调用方拿不到返回', async () => {
   const dir = mkTmpDir('hang-start');
@@ -114,7 +141,7 @@ test('启动挂起：状态停在 starting，未配置超时则调用方拿不�
     assert.equal(core.getModule('hang')!.status, 'starting');
     // 已运行的其他模块不受影响：事件照常送达
     await core.sendEvent('ping');
-    assert.deepEqual(core.array('public:ok:m') as unknown[], ['external:ping']);
+    assert.deepEqual(items(core, 'public:ok:m'), ['external:ping']);
     // 调用方拿不到返回：promise 未 settle
     let settled = false;
     startPromise.then(() => { settled = true; });

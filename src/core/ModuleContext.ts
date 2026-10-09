@@ -2,13 +2,13 @@
  * 模块上下文：框架核心提供给模块的 API 面。
  * 对应 docs/需求.md 的模块内方法：
  *   1. 接收事件信息（onEvent 由核心调用）
- *   2. 公开数组        -> exposeArray（把模块自己的数组对象映射到名字）
- *   3. 取消公开数组    -> unexposeArray
- *   4. 拉取特定数组    -> array（返回被映射对象引用，原生数组语法，一次修改处处有效）
+ *   2. 公开对象        -> exposeObject（把模块自己的对象映射到名字）
+ *   3. 取消公开对象    -> unexposeObject
+ *   4. 拉取特定对象    -> object（返回被映射对象引用，原生读写，一次修改处处有效）
  */
 import type { Hearth } from './Hearth';
 import type { ModuleConfig } from '../types';
-import { arrayKey, ARRAY_KEY_PREFIX } from './ArrayRegistry';
+import { objectKey, OBJECT_KEY_PREFIX } from './ObjectRegistry';
 
 export class ModuleContext {
   /** 模块名 */
@@ -39,38 +39,38 @@ export class ModuleContext {
   }
 
   /** 定向发送消息（信息直达）：直接发给指定模块（或核心 'core'）。
-   *  只带 source（本模块名，核心自动打）+ 内容，无事件名、不走公共数组。
+   *  只带 source（本模块名，核心自动打）+ 内容，无事件名、不走公共对象。
    *  返回是否送达（true = 有接收方并已投递；false = 目标不存在/未运行/未实现 onMessage）。 */
   sendTo(target: string, data?: unknown): Promise<boolean> {
     return this.core.sendTo(target, data, this.moduleName);
   }
 
-  /** 公开数组：把模块自己的数组对象映射到名字（存引用，不拷贝）。 */
-  exposeArray(name: string, items: unknown[] = []): void {
-    this.core.exposeArray(name, this.moduleName, items);
+  /** 公开对象：把模块自己的对象映射到名字（存引用，不拷贝）。 */
+  exposeObject(name: string, value: object = {}): void {
+    this.core.exposeObject(name, this.moduleName, value);
   }
 
-  /** 取消公开数组（仅限自己公开的）。 */
-  unexposeArray(name: string): void {
-    this.core.unexposeArray(name, this.moduleName);
+  /** 取消公开对象（仅限自己公开的）。 */
+  unexposeObject(name: string): void {
+    this.core.unexposeObject(name, this.moduleName);
   }
 
-  /** 匹配拉取：模式含通配符 -> 匹配全名返回 { 数组全名: 引用 }；否则返回该数组引用。
-   *  模式为三段式全名（public:模块:名）时直接拉取；否则按本模块名自动补齐前两段（拉自己的数组）。
-   *  自动补齐的原因：模块日常只碰自己的数组，写全名冗长且易错；通配模式涉及别人的数组
+  /** 匹配拉取：模式含通配符 -> 匹配全名返回 { 对象全名: 引用 }；否则返回该对象引用。
+   *  模式为三段式全名（public:模块:名）时直接拉取；否则按本模块名自动补齐前两段（拉自己的对象）。
+   *  自动补齐的原因：模块日常只碰自己的对象，写全名冗长且易错；通配模式涉及别人的对象
    *  （名字里带别人的模块名），无法推断，必须写全名。 */
-  array<T = any>(pattern: string): T[] | Record<string, T[]> {
-    if (!pattern.includes('*') && !pattern.includes('?') && !pattern.startsWith(ARRAY_KEY_PREFIX + ':')) {
-      return this.core.array<T>(arrayKey(this.moduleName, pattern));
+  object<T extends object = Record<string, unknown>>(pattern: string): T | Record<string, T> {
+    if (!pattern.includes('*') && !pattern.includes('?') && !pattern.startsWith(OBJECT_KEY_PREFIX + ':')) {
+      return this.core.object<T>(objectKey(this.moduleName, pattern));
     }
-    return this.core.array<T>(pattern);
+    return this.core.object<T>(pattern);
   }
 
 
   /** 请求自身重启（代码重载由模块自己发起）：模块替换代码文件后调用本方法。
    *  核心先验证新代码（失败则旧实例继续运行，返回 false）→ 停止旧实例（stop() 返回
    *  即"已关闭"）→ 重新启动本模块。状态保存/恢复与版本管理都是模块自己的职责，
-   *  核心不迁移任何状态。返回是否完成重启。 */
+   *  核心不迁移任何状态。返回重启后模块是否处于运行态：新实例启动失败或被跳过为 false。 */
   requestReload(): Promise<boolean> {
     return this.core.reloadModule(this.moduleName);
   }

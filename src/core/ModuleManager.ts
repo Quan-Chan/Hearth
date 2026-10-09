@@ -16,7 +16,7 @@
  *
  * 依赖注入：构造时传入 Hearth 实例（只做类型引用，无运行时循环），
  * 经由 core 访问日志出口（writeLog）、选项（options）、停机标记（stopping）与
- * 数组注销（removeOwnerArrays）。
+ * 对象注销（removeOwnerObjects）。
  */
 import { ModuleContext } from './ModuleContext';
 import { LOG_TYPES } from './logFormat';
@@ -67,16 +67,17 @@ export class ModuleManager {
    *  超时只放弃等待并记日志——悬挂的启动函数本身无法终止，同时锁住不再自动重试。
    *  每次启动都从磁盘重新加载模块程序（重启因此拿到最新代码）。 */
   async startModule(name: string, reason?: string): Promise<void> {
-    return this.startModuleCore(name, reason, undefined);
+    await this.startModuleCore(name, reason, undefined);
   }
 
   /** 请求自身重启：模块（或宿主）替换代码文件后调用本方法，核心先验证新代码再停旧启新。
    *   - 新代码（loadModuleProgram）加载失败：记录 error、返回 false，旧实例继续运行不受影响
    *     （验证不过就不更换，替换不会中途出错）；
-   *   - 加载成功：停止旧实例（其公开数组随拥有者消失）→ 用已验证的 def 直接启动新实例，
+   *   - 加载成功：停止旧实例（其公开对象随拥有者消失）→ 用已验证的 def 直接启动新实例，
    *     不重新加载（避免工厂函数重复求值产生的副作用）；
    *   - 状态保存与恢复、版本管理都是模块自己的职责（核心不迁移任何模块变量、不记录版本）。
-   *  返回是否完成替换。 */
+   *  返回启动完成或模块已处于运行态为 true；启动被跳过（停机中、启动中、禁用、超时锁定）
+   *  或新实例启动失败为 false。 */
   async reloadModule(name: string): Promise<boolean> {
     const slot = this.modules.get(name);
     if (!slot) throw new Error(`unknown module: ${name}`);
@@ -110,55 +111,59 @@ export class ModuleManager {
       module: name,
       file: slot.config.file,
     });
-    // ② 停止旧实例（stop() 返回即"已关闭"；数组随旧拥有者消失）
+    // ② 停止旧实例（stop() 返回即"已关闭"；对象随旧拥有者消失）
     if (slot.status === 'running' || slot.status === 'starting') {
       await this.stopModule(name);
     }
     // ③ 重新启动（用已验证的 def，不重复加载）
-    await this.startModuleCore(name, 'restart', def);
-    return true;
+    // 返回值取自本次启动的真实结果：启动被跳过或失败时为 false
+    return this.startModuleCore(name, 'restart', def);
   }
 
   /** 启动的实际执行体：preloadedDef 提供时不再加载代码（重启复用已验证的 def）；
-   *  不提供则每次启动都从磁盘加载（配置更新/事件启动的常规路径）。 */
-  private async startModuleCore(name: string, reason: string | undefined, preloadedDef?: ModuleDefinition): Promise<void> {
+   *  不提供则每次启动都从磁盘加载（配置更新/事件启动的常规路径）。
+   *  返回启动完成后模块是否处于运行态：已在运行的跳过返回 true，停机中、启动中、禁用、
+   *  超时锁定等跳过与启动失败均返回 false。 */
+  private async startModuleCore(name: string, reason: string | undefined, preloadedDef?: ModuleDefinition): Promise<boolean> {
     const slot = this.modules.get(name);
     if (!slot) throw new Error(`unknown module: ${name}`);
     if (!this.core.started) throw new Error('core not started, cannot start module');
     if (this.core.stopping) {
       this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'core is stopping, skip start', { reason: 'core-stopping' });
-      return;
+      return false;
     }
     // 幂等：事件密集到达时同模块可能被多次点名，已在跑/正在启动/被禁用的直接跳过。
     if (slot.status === 'running') {
       this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'module already running, skip start', {
         reason: 'already-running',
       });
-      return;
+      return true;
     }
     if (slot.inflightStart) {
       this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'module start in progress, skip duplicate start', {
         reason: 'start-in-progress',
       });
-      return;
+      return false;
     }
     if (!slot.config.enabled) {
       this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'module disabled, skip start', {
         reason: 'disabled',
       });
-      return;
+      return false;
     }
     if (slot.startTimedOut && !isManualishStart(reason)) {
       this.core.writeLog(LOG_TYPES.MODULE_SKIP, name, 'previous start timed out, auto retry locked; manual start or config update required', {
         reason: 'start-timeout-lock',
       });
-      return;
+      return false;
     }
     slot.startSeq++;
     const seq = slot.startSeq;
     slot.status = 'starting';
     const timeoutMs = Math.max(0, Math.round(slot.config.startTimeoutMs ?? this.core.options.defaultStartTimeoutMs ?? 0));
-    const run = (async () => {
+    // 本次尝试的 promise：闭包内用身份判定启动锁是否仍属于本人（别人接管后不动它的锁）
+    let run: Promise<void> | undefined;
+    run = (async () => {
       try {
         const def = preloadedDef ?? (await loadModuleProgram(slot.config.file));
         const ctx = new ModuleContext(this.core, name, slot.config);
@@ -190,8 +195,11 @@ export class ModuleManager {
         }
         if (startError) throw startError;
         // 启动完成前若已被关闭/取消：立即回收这次启动，不写入运行状态。
+        // 作废实例在启动过程中公开的对象一并注销，与 stopModule/stopAll 的取消分支同一规则；
+        // 此刻启动锁仍由本次尝试持有，同一模块的新启动进不来，注销的只会是本次实例的对象。
         if (seq !== slot.startSeq || this.core.stopping || !this.core.started) {
           try { await def.stop?.(ctx); } catch { /* 回收失败忽略：核心都在关了 */ }
+          this.core.removeOwnerObjects(name);
           if (seq === slot.startSeq) slot.status = 'stopped';
           return;
         }
@@ -211,14 +219,21 @@ export class ModuleManager {
           error: em,
         });
       } finally {
-        if (seq === slot.startSeq) slot.inflightStart = undefined;
+        // 只清理本人持有的启动锁：已被别人接管（新尝试或停机收尾）时不动它的锁。
+        // 本次尝试被作废（配置更新使代数递增）且无人接管时，状态收敛为未运行，不留在 starting。
+        if (slot.inflightStart === run) {
+          slot.inflightStart = undefined;
+          if (seq !== slot.startSeq && slot.status === 'starting') slot.status = 'stopped';
+        }
       }
     })();
     slot.inflightStart = run;
     await run;
+    // 本次启动结束时模块是否在运行：跳过分支已各自返回，此处只剩本代真实结果
+    return this.getSlot(name)?.status === 'running';
   }
 
-  /** 核心方法 2：关闭单个模块。关闭后其公开的数组自动取消映射。
+  /** 核心方法 2：关闭单个模块。关闭后其公开的对象自动取消映射。
    *  停止一个模块：调用其 stop() 钩子并等待返回——模块的 stop() 返回即"已关闭"。
    *  （全局停机由 stopAll() 并行等待 + 超时强制关闭；本方法用于 CLI 停止指令、
    *  配置 enabled:false、以及模块请求重启时的停止环节。） */
@@ -230,9 +245,9 @@ export class ModuleManager {
       slot.startSeq++;
       slot.status = 'stopped';
       slot.inflightStart = undefined;
-      const cancelled = this.core.removeOwnerArrays(name);
+      const cancelled = this.core.removeOwnerObjects(name);
       this.core.writeLog(LOG_TYPES.MODULE_STOP, name, 'cancelled during start, module stopped', {
-        removedArrays: cancelled,
+        removedObjects: cancelled,
       });
       return;
     }
@@ -250,13 +265,13 @@ export class ModuleManager {
       });
     }
     slot.status = 'stopped';
-    // 模块关闭 -> 其公开数组映射全部注销。
-    const removed = this.core.removeOwnerArrays(name);
+    // 模块关闭 -> 其公开对象映射全部注销。
+    const removed = this.core.removeOwnerObjects(name);
     this.core.writeLog(
       LOG_TYPES.MODULE_STOP,
       name,
-      removed.length > 0 ? `module stopped, removed ${removed.length} shared arrays` : 'module stopped',
-      { removedArrays: removed },
+      removed.length > 0 ? `module stopped, removed ${removed.length} shared objects` : 'module stopped',
+      { removedObjects: removed },
     );
   }
 
@@ -275,9 +290,9 @@ export class ModuleManager {
         m.startSeq++;
         m.status = 'stopped';
         m.inflightStart = undefined;
-        const cancelled = this.core.removeOwnerArrays(m.name);
+        const cancelled = this.core.removeOwnerObjects(m.name);
         this.core.writeLog(LOG_TYPES.MODULE_STOP, m.name, 'cancelled during start, module stopped', {
-          removedArrays: cancelled,
+          removedObjects: cancelled,
         });
         continue;
       }
@@ -290,13 +305,13 @@ export class ModuleManager {
           });
         }
         m.status = 'stopped';
-        // 模块关闭 -> 其公开数组映射全部注销。
-        const removed = this.core.removeOwnerArrays(m.name);
+        // 模块关闭 -> 其公开对象映射全部注销。
+        const removed = this.core.removeOwnerObjects(m.name);
         this.core.writeLog(
           LOG_TYPES.MODULE_STOP,
           m.name,
-          removed.length > 0 ? `module stopped, removed ${removed.length} shared arrays` : 'module stopped',
-          { removedArrays: removed },
+          removed.length > 0 ? `module stopped, removed ${removed.length} shared objects` : 'module stopped',
+          { removedObjects: removed },
         );
       })();
       closing.push(close);
@@ -336,27 +351,27 @@ export class ModuleManager {
   }
 
   /** 配置更新：应用新配置到槽位（配置层生效，模块实例与代码不动）。
-   *   - 更新槽位注册（config 字段）与启动代数（旧代启动全部作废）；
+   *   - 就地更新槽位（config 字段）与启动代数（旧代启动全部作废）；
    *   - 运行中的模块：刷新其 ctx.config 引用（模块自行决定何时读取/如何应用新配置）；
    *   - 别的文件来抢同名模块名（yamlPath 不同）返回 false —— 拒绝顶替，防同名伪装。
-   *  索引重建、config-update 日志与 enabled:false 的停止决策由调用方（Hearth）负责。 */
+   *  索引重建、config-update 日志与 enabled:false 的停止决策由调用方（Hearth）负责。
+   *  就地更新的原因：在途启动持有的是槽位对象本身，替换对象会让代数递增与状态收敛落在旧对象上，
+   *  槽位停在 starting。就地更新让在途启动看到代数已变，收尾时释放启动锁并把状态收敛为未运行。 */
   async applyUpdate(cfg: ModuleConfig, yamlPath: string): Promise<boolean> {
     const prev = this.modules.get(cfg.name);
     // 同名不同文件：本文件不是该模块名当前归属的 YAML，拒绝应用（模块名全库不允许重复，先注册者保留）
     if (prev && prev.yamlPath !== yamlPath) return false;
-    const wasRunning = prev?.status === 'running';
-    this.modules.set(cfg.name, {
-      name: cfg.name,
-      config: cfg,
-      yamlPath,
-      status: wasRunning ? 'running' : prev?.status ?? 'stopped',
-      def: prev?.def,
-      ctx: prev?.ctx,
-      seq: prev?.seq ?? ++this.slotSeq,
-      startSeq: (prev?.startSeq ?? 0) + 1, // 配置更新使旧代启动全部作废：在途启动用旧配置（如旧的 startTimeoutMs），结果不应写回
-    });
+    // 槽位不存在（本文件首次被应用）：按新注册处理
+    if (!prev) {
+      this.register(cfg, yamlPath);
+      return true;
+    }
+    const wasRunning = prev.status === 'running';
+    prev.config = cfg;
+    prev.startSeq++; // 配置更新使旧代启动全部作废：在途启动用旧配置（如旧的 startTimeoutMs），结果不应写回
+    prev.startTimedOut = undefined; // 配置更新解除启动超时锁（与手动、CLI、重启同为人为主导的途径）
     // 运行中的模块：只刷新配置引用，不重启、不重载代码
-    if (wasRunning && prev?.ctx) {
+    if (wasRunning && prev.ctx) {
       prev.ctx.refreshConfig(cfg);
     }
     return true;

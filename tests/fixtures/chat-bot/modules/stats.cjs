@@ -2,11 +2,11 @@
 module.exports = {
   name: 'stats',
   start(ctx) {
-    ctx.exposeArray('stats', [{ key: 'events', count: 0 }]);
+    ctx.exposeObject('stats', { items: [{ key: 'events', count: 0 }] });
   },
   onEvent(ctx) {
-    const stats = ctx.array('stats');
+    const stats = ctx.object('stats').items;
     const idx = stats.findIndex((s) => s.key === 'events');
-    ctx.array('stats')[idx] = { key: 'events', count: stats[idx].count + 1 };
+    ctx.object('stats').items[idx] = { key: 'events', count: stats[idx].count + 1 };
   },
 };

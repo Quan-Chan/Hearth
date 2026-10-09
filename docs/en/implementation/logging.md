@@ -2,14 +2,16 @@
 
 ## Entry structure
 
-Each log entry has a three-field main structure: type, source, message, plus arbitrary structured additional fields (event, data, recipients, reason, error, file, removedArrays, command).
+Each log entry has a three-field main structure: type, source, message, plus arbitrary structured additional fields (event, data, recipients, reason, error, file, removedObjects, command).
 
 ## Two-tier storage
 
 - In-memory window: keeps the most recent maxLogMemoryEntries entries (default 20000), evicts the oldest beyond that, serves in-process queries (all, byType, byCategory)
 - On disk: JSONL append stream, content complete and not truncated
 
-Disk write failures are silent and do not affect the core main flow.
+Disk write failures are silent and do not affect the core main flow; the in-memory copy and later entries are unaffected.
+
+When data cannot be serialized (circular references and similar), the on-disk entry drops data and adds dataDropped: unserializable while the other fields are written as usual; the in-memory copy keeps the original value.
 
 ## Rotation
 

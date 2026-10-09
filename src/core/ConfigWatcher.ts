@@ -7,6 +7,8 @@
  *  - 新的 YAML 配置文件出现   -> onLoad
  *  - 已有 YAML 文件内容变化   -> onUpdate
  *  - YAML 文件被删除          -> onRemove
+ *  - 已有文件的 name 变化     -> onRemove（旧名）+ onLoad（新名）；新名已被别的文件占用时
+ *                              不移除旧名（该次改名必被消费方拒绝，避免模块净损失）
  * 检测策略（性能）：稳态每轮只 statSync（mtimeMs+size+ctimeMs 指纹），指纹不变的文件
  * 直接跳过、不读内容；指纹变化才 readFileSync + sha1 二次确认（同内容只改 mtime 的
  * touch 不触发 onUpdate）；哈希真变才解析 YAML。解析失败不更新指纹 -> 下轮重试。
@@ -139,15 +141,33 @@ export class ConfigWatcher {
         }
         candidates.push({ yamlPath, stat, hash, cfg });
       }
-      // 阶段2：删除检查 —— known 记录的 yamlPath 已不在磁盘上，即模块消失。
-      //   与回调成败无关：文件是否存在是删除的依据（坏 YAML/被拒文件的
-      //   存在不影响其他文件的删除判定）。
-      for (const [name, info] of [...this.known]) {
+      // 阶段2：移除检查 —— known 记录里的模块消失，两种情形：
+      //   ① 文件已不在磁盘上；
+      //   ② 同一路径本轮解析出的 name 与登记的不一致（改名）。
+      //   与回调成败无关：文件是否存在、本轮是否解析成功是移除的依据（坏 YAML/被拒
+      //   文件的存在不影响其他文件的移除判定）。改名时旧名只移除，新名由阶段3 走 onLoad。
+      const declaredNames = new Map(candidates.map((c) => [c.yamlPath, c.cfg.name]));
+      // 待移除集合先算全：改名目标名若仍被别的文件占用（那个文件本轮不移除），消费方会拒绝
+      // 这次改名，此时保留旧名——否则旧模块被停而新名注册不进来，模块净损失。
+      const vanishing = new Set<string>();
+      for (const [name, info] of this.known) {
         if (!fileSet.has(info.yamlPath)) {
-          this.known.delete(name);
-          this.stats.delete(info.yamlPath);
-          await this.callbacks.onRemove(name);
+          vanishing.add(name);
+          continue;
         }
+        const declared = declaredNames.get(info.yamlPath);
+        if (declared !== undefined && declared !== name) vanishing.add(name);
+      }
+      for (const [name, info] of [...this.known]) {
+        if (!vanishing.has(name)) continue;
+        const declared = declaredNames.get(info.yamlPath);
+        if (declared !== undefined) {
+          const occupant = this.known.get(declared);
+          if (occupant && occupant.yamlPath !== info.yamlPath && !vanishing.has(declared)) continue;
+        }
+        this.known.delete(name);
+        this.stats.delete(info.yamlPath);
+        await this.callbacks.onRemove(name);
       }
       // 阶段3：对解析成功的文件触发回调。消费方（核心）可拒绝注册/更新（返回 false）：
       //   此时本文件不记账（known/stats 都不动），下轮扫描会重新检查并再次请求，

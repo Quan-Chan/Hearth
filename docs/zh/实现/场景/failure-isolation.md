@@ -6,7 +6,7 @@
 
 1. 模块的 start() 抛错：置 failed、写 error 字段、记 error 日志，不向上抛，事件派发继续。
 2. 模块的 onEvent 抛错：记 error，继续投递其余监听者。
-3. 模块的 stop() 抛错：记 error，仍置 stopped 并注销数组。
+3. 模块的 stop() 抛错：记 error，仍置 stopped 并注销对象。
 4. 模块私下发起的异步操作失败且无人接住：guardProcess 关闭时进程退出；开启时捕获并写 error 日志，进程继续。
 5. 事后经 getModule() 的 status 与 error 字段、log.byType('error') 查询；failed 模块经手动 start 或配置更新恢复。
 
@@ -14,7 +14,7 @@
 
 - 启动失败对调用方静默，只能翻日志（见 已知问题 2）。
 - failed 模块被每个匹配事件反复重试启动，每失败一次一条 error，无退避。
-- start 中途抛错留下孤儿数组：failed 不在停止清理范围，配置移除也不清理。
+- start 中途抛错留下孤儿对象：failed 不在停止清理范围，配置移除也不清理。
 - 事件派发被启动步骤阻塞：start 永不返回则该事件的监听者收不到（见 已知问题 2、6）。
 - stop 抛错被视为已关闭，数据已随拥有者消失。
 - stop 永不返回造成状态与事实分裂：状态仍 running，日志已关闭（见 已知问题 4）。

@@ -7,10 +7,10 @@ The entry for host code to create and operate the core. Compared with the CLI ap
 - createCore(options): constructs the core, does not start it
 - startCore(options): constructs and starts it immediately, returns the started core
 
-\`\`\`ts
+```ts
 import { startCore } from './src';
 const core = await startCore({ moduleDir: './modules' });
-\`\`\`
+```
 
 ## Core Options
 
@@ -26,7 +26,7 @@ const core = await startCore({ moduleDir: './modules' });
 | maxLogMemoryEntries | 20000 | Upper limit of log entries kept in memory |
 | stopTimeoutMs | 20000 | Time limit in milliseconds for waiting for all modules to report closed during shutdown |
 
-The core section of the root config file hearth.yaml can write the same fields; relative paths are resolved against the directory containing the config file.
+The core section of the root config file hearth.yaml is read by the command line entry src/hearth.ts; only moduleDir, logFile, watch, and logToConsole take effect there, and relative paths are resolved against the directory containing the config file. The other options (pollIntervalMs, guardProcess, defaultStartTimeoutMs, maxLogMemoryEntries, stopTimeoutMs) are set through the options of createCore/startCore.
 
 ## Core Methods
 
@@ -36,7 +36,7 @@ Module management: startModule(name, reason?), stopModule(name), reloadModule(na
 
 Events and messages: sendEvent(name, data?, source?) produces an event; sendTo(target, data?, source?) sends point-to-point; sendDirected(targets, name, data?, source?) delivers an event directly to the specified targets or broadcasts to all; targets need not declare listening, and no start-event matching is performed (the underlying capability of the CLI send instruction).
 
-Shared arrays: exposeArray(name, owner, items), unexposeArray(name, owner), array(pattern).
+Shared objects: exposeObject(name, owner, value), unexposeObject(name, owner), object(pattern).
 
 Query and logs: listModules(), getModule(name), logModule(name, ...parts).
 

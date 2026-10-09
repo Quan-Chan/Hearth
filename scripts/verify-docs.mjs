@@ -13,7 +13,7 @@ const FACTS = [
   { fact: 'CLI 指令表含 exit', doc: ['docs/zh/使用/日志与命令行.md', '| exit |'], src: ['src/core/CliProtocol.ts', "cmd === 'exit'"] },
   { fact: '指令通道为定向指令', doc: ['docs/zh/实现/CLI协议.md', "sendTo('core', { cmd, args })"], src: ['src/core/CliProtocol.ts', 'handleDirected'] },
   { fact: '钩子签名两参数', doc: ['docs/zh/使用/模块程序.md', 'onEvent(ctx, event)'], src: ['src/types.ts', 'onEvent?(ctx: ModuleContext, event: CoreEvent)'] },
-  { fact: '数组注册表规则', doc: ['docs/zh/实现/公共数组.md', 'removeOwner'], src: ['src/core/ArrayRegistry.ts', 'removeOwner(owner: string)'] },
+  { fact: '对象注册表规则', doc: ['docs/zh/实现/公共对象.md', 'removeOwner'], src: ['src/core/ObjectRegistry.ts', 'removeOwner(owner: string)'] },
   { fact: '启动事件名 core:startup', doc: ['docs/zh/实现/场景/cold-start.md', 'core:startup'], src: ['src/core/Hearth.ts', "sendEvent('startup'"] },
   { fact: '停机调用模块停止钩子', doc: ['docs/zh/实现/场景/shutdown.md', '调用 stop()'], src: ['src/core/ModuleManager.ts', 'def?.stop?.'] },
   { fact: '通配符规则', doc: ['docs/zh/使用/模块配置.md', '* 匹配任意字符序列'], src: ['src/core/EventMatcher.ts', 'patternToRegExp'] },

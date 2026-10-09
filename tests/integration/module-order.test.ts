@@ -13,7 +13,7 @@ import { mkTmpDir, rmDir } from '../helpers';
 function writeModule(dir: string, name: string): void {
   const sub = path.join(dir, name);
   fs.mkdirSync(sub);
-  fs.writeFileSync(path.join(sub, name + '.cjs'), 'module.exports = { name: "' + name + '", start(ctx) { ctx.exposeArray("mark", []); }, onEvent(ctx) { ctx.array("mark").push("x"); } };');
+  fs.writeFileSync(path.join(sub, name + '.cjs'), 'module.exports = { name: "' + name + '", start(ctx) { ctx.exposeObject("mark", { items: [] }); }, onEvent(ctx) { ctx.object("mark").items.push("x"); } };');
   fs.writeFileSync(path.join(sub, name + '.yaml'), 'name: ' + name + '\nfile: ./' + name + '.cjs\nstartEvents: ["*:go"]\n');
 }
 

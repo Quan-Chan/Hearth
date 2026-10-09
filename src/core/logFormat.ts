@@ -96,8 +96,8 @@ export function formatLogEntry(entry: LogEntry): string {
   if (entry.file !== undefined) {
     extra.push('file=' + String(entry.file));
   }
-  if (entry.removedArrays !== undefined && Array.isArray(entry.removedArrays) && entry.removedArrays.length > 0) {
-    extra.push('removedArrays=' + entry.removedArrays.join(','));
+  if (entry.removedObjects !== undefined && Array.isArray(entry.removedObjects) && entry.removedObjects.length > 0) {
+    extra.push('removedObjects=' + entry.removedObjects.join(','));
   }
   return extra.length > 0 ? line + '  [' + extra.join('  ') + ']' : line;
 }

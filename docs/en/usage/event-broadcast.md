@@ -21,9 +21,9 @@ Modules only write the event name segment (the first argument of sendEvent) and 
 
 ## Sending
 
-\`\`\`js
+```js
 ctx.sendEvent('greet', { name: 'world' });
-\`\`\`
+```
 
 Events are fire-and-forget: no queueing, no retry.
 
@@ -40,21 +40,21 @@ The same event is a start signal for a non-running module and a work instruction
 
 Patterns support * (any sequence of characters) and ? (a single character). To respond to an event with the same name from any source:
 
-\`\`\`yaml
+```yaml
 listen:
   - "*:greet"
-\`\`\`
+```
 
 ## Receiving
 
-\`\`\`js
+```js
 onEvent(ctx, event) {
   // event.name = full event name, event.data = content
   ctx.log('received', event.name);
 }
-\`\`\`
+```
 
-Listeners receive events one by one in load order; a single module's handling failure does not affect other modules. Each listener receives an independent deep copy of data: modifying one's own copy does not affect other listeners. data carries information only; mutable shared data belongs in shared arrays.
+Listeners receive events one by one in load order; a single module's handling failure does not affect other modules. Each listener receives an independent deep copy of data: modifying one's own copy does not affect other listeners. data carries information only; mutable shared data belongs in shared objects.
 
 ## Event Dropping
 

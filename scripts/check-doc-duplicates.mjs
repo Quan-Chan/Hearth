@@ -20,7 +20,11 @@ function stripCodeBlocks(text) {
 }
 
 const norm = (s) => s.replace(/[`#|*]/g, '').replace(/\s/g, '');
-const IGNORE = [norm('[English](README.md) | [中文](README.zh.md)')];
+const IGNORE = [
+  norm('[English](README.md) | [中文](README.zh.md)'),
+  // 两个 README 共用同一个 CI 徽章地址，中英版本必然相同，不算重复
+  norm('[![CI](https://github.com/Quan-Chan/Hearth/actions/workflows/ci.yml/badge.svg)](https://github.com/Quan-Chan/Hearth/actions/workflows/ci.yml)'),
+];
 
 // 分组键：语言+层级。需求与编写要求单独一组（不参与查重）。
 const groupOf = (f) => {

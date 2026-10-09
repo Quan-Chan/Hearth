@@ -8,7 +8,7 @@ import { mkTmpDir, rmDir } from '../helpers';
 
 /**
  * 名称校验与资源独占：
- *  - 模块名与数组名不能含冒号（':' 是事件名/数组名的分隔符）；
+ *  - 模块名与对象名不能含冒号（':' 是事件名/对象名的分隔符）；
  *  - 同一日志文件只允许一个 EventStreamLog 实例；
  *  - rescanModules 返回是否真正执行。
  */
@@ -34,12 +34,12 @@ test('模块名含冒号：配置解析抛错', () => {
   }
 });
 
-test('数组名含冒号：expose 抛错', async () => {
+test('对象名含冒号：expose 抛错', async () => {
   const dir = mkTmpDir('arrname');
   try {
     const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: false });
     await core.start();
-    assert.throws(() => core.exposeArray('a:b', 'owner', []), /must not contain/);
+    assert.throws(() => core.exposeObject('a:b', 'owner', { items: [] }), /must not contain/);
     await core.stop();
   } finally {
     rmDir(dir);

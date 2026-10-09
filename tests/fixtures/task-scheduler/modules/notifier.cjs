@@ -2,10 +2,10 @@
 module.exports = {
   name: 'notifier',
   start(ctx) {
-    ctx.exposeArray('notifications', []);
+    ctx.exposeObject('notifications', { items: [] });
   },
   onEvent(ctx, event) {
     if (!event.name.endsWith(':task:done')) return;
-    ctx.array('notifications').push({ id: event.data.id, text: '任务 ' + event.data.name + ' 已完成' });
+    ctx.object('notifications').items.push({ id: event.data.id, text: '任务 ' + event.data.name + ' 已完成' });
   },
 };

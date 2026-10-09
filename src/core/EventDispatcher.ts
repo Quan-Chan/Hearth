@@ -119,7 +119,7 @@ export class EventDispatcher {
 
   /** 逐个派发事件消息：单个模块失败只记 error 日志，不影响其他模块。
    *  data 按接收者独立拷贝（structuredClone）：每个监听者拿到一份原始信息的副本，
-   *  修改自己的副本不影响其他监听者。data 只承载信息，可变共享数据走公共数组。
+   *  修改自己的副本不影响其他监听者。data 只承载信息，可变共享数据走公共对象。
    *  拷贝失败（不可克隆的值，如函数）时回退为原引用。 */
   private async deliverTo(recipients: ModuleSlot[], event: CoreEvent, failPrefix: string): Promise<void> {
     for (const m of recipients) {
@@ -166,7 +166,7 @@ export class EventDispatcher {
   // ==================== 定向信息（信息直达：模块对模块 点对点直通） ====================
 
   /**
-   * 定向发送一条纯消息（信息直达）：直接投递给指定的接收方，不经事件比对、不进公共数组。
+   * 定向发送一条纯消息（信息直达）：直接投递给指定的接收方，不经事件比对、不进公共对象。
    *  - target === 'core'：核心作为可寻址收件方（如 CLI 指令），结果由核心用 sendTo 直接回传；
    *  - target === 模块名：投递给"运行中且实现了 onMessage"的模块（显式 opt-in），失败隔离；
    *  - 其余：没有接收方，记日志并返回 false。

@@ -8,13 +8,13 @@
 
 | 部件 | 文件 | 职责 |
 | --- | --- | --- |
-| ConnectCore | src/core/ConnectCore.ts | 核心类：生命周期、配置热加载、数组 API、查询，委托下两者 |
+| Hearth | src/core/Hearth.ts | 核心类：生命周期、配置热加载、对象 API、查询，委托下两者 |
 | ModuleManager | src/core/ModuleManager.ts | 模块状态机：启动/停止/重启/停机收尾 + 槽位表 |
 | EventDispatcher | src/core/EventDispatcher.ts | 事件派发与定向通道：sendEvent/sendDirected/sendTo |
 | MatchIndex | src/core/MatchIndex.ts | 事件比对索引：精确表 + 通配列表 |
 | EventMatcher | src/core/EventMatcher.ts | 事件名匹配规则与正则编译缓存 |
 | ConfigWatcher | src/core/ConfigWatcher.ts | 模块文件夹轮询监听与 YAML 解析 |
-| ArrayRegistry | src/core/ArrayRegistry.ts | 公共数组注册表（三段式名、匹配拉取） |
+| ObjectRegistry | src/core/ObjectRegistry.ts | 公共对象注册表（三段式名、匹配拉取） |
 | EventStreamLog | src/core/EventStreamLog.ts | 日志双层存储与轮转 |
 | CliProtocol | src/core/CliProtocol.ts | CLI 定向指令协议 |
 | ModuleContext | src/core/ModuleContext.ts | 模块上下文（ctx） |
@@ -40,13 +40,13 @@ sendEvent 的完整路径：
 | 2 配置热加载 | ConfigWatcher | 模块配置 | 配置监听 | yaml-watcher |
 | 3.1 事件广播 | EventDispatcher | 事件广播 | 事件派发 | core-lifecycle |
 | 3.2 定向消息 | EventDispatcher | 定向信息 | 事件派发 | directed-message |
-| 3.3 共享数组 | ArrayRegistry | 公共数组 | 公共数组 | array-registry/public-arrays |
+| 3.3 共享对象 | ObjectRegistry | 公共对象 | 公共对象 | object-registry/public-objects |
 | 4 模块生命周期 | ModuleManager | 重启与状态 | 模块生命周期 | core-lifecycle/module-reload |
-| 5 核心生命周期 | ConnectCore | 宿主集成接口 | 场景 cold-start/shutdown | boot/shutdown-ack |
-| 6 失败处理 | ConnectCore | 模块程序 | 失败处理 | core-lifecycle |
+| 5 核心生命周期 | Hearth | 宿主集成接口 | 场景 cold-start/shutdown | boot/shutdown-ack |
+| 6 失败处理 | Hearth | 模块程序 | 失败处理 | core-lifecycle |
 | 7 日志 | EventStreamLog | 日志与命令行 | 日志体系 | event-stream-log/log-format |
 | 8 命令行 | CliProtocol/cli | 日志与命令行 | CLI协议 | cli-commands |
-| 9 宿主集成 | ConnectCore | 宿主集成接口 | 事件派发 | usability |
+| 9 宿主集成 | Hearth | 宿主集成接口 | 事件派发 | usability |
 | 10 技术栈 | tsconfig | — | 验证方法 | 全部 |
 
 ## 性能实测
@@ -63,7 +63,7 @@ sendEvent 的完整路径：
 - 事件派发与比对索引：docs/zh/实现/事件派发.md
 - 模块生命周期：docs/zh/实现/模块生命周期.md
 - 配置监听：docs/zh/实现/配置监听.md
-- 公共数组：docs/zh/实现/公共数组.md
+- 公共对象：docs/zh/实现/公共对象.md
 - 日志体系：docs/zh/实现/日志体系.md
 - CLI 协议：docs/zh/实现/CLI协议.md
 - 失败处理与守护：docs/zh/实现/失败处理.md

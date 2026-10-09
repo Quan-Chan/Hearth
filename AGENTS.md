@@ -16,7 +16,7 @@ Hearth 是一个事件驱动的模块化框架核心，运行在 Node.js 上，�
 
 - 事件广播（sendEvent/onEvent）：纯字符串信号，携带可选内容，即发即弃
 - 定向消息（sendTo/onMessage）：点对点直通，目标为核心时可寻址（CLI 指令入口）
-- 共享数组（exposeArray/array）：公开数组对象引用，一次修改处处可见
+- 共享对象（exposeObject/object）：公开对象引用，一次修改处处可见
 
 ## 项目理念（重要）
 
@@ -35,12 +35,12 @@ Hearth 是一个事件驱动的模块化框架核心，运行在 Node.js 上，�
 Hearth/
 ├── src/                      # TypeScript 源码
 │   ├── core/                 # 核心实现
-│   │   ├── Hearth.ts    # 主类：生命周期/配置热加载/数组API/查询，委托下两者
+│   │   ├── Hearth.ts    # 主类：生命周期/配置热加载/对象API/查询，委托下两者
 │   │   ├── ModuleManager.ts  # 模块状态机：启动/停止/重启/停机收尾 + 槽位表
 │   │   ├── EventDispatcher.ts# 事件派发与定向通道（sendEvent/sendDirected/sendTo）
 │   │   ├── ConfigWatcher.ts  # 模块文件夹轮询监听 + YAML 解析（200ms 指纹轮询）
 │   │   ├── EventStreamLog.ts # 日志双层存储（内存窗口 + JSONL 落盘，按天/大小轮转）
-│   │   ├── ArrayRegistry.ts  # 公共数组注册表（三段式名、匹配拉取）
+│   │   ├── ObjectRegistry.ts  # 公共对象注册表（三段式名、匹配拉取）
 │   │   ├── MatchIndex.ts     # 事件比对索引（精确表 + 通配列表）
 │   │   ├── EventMatcher.ts   # 事件名匹配规则（* 与 ? 通配）
 │   │   ├── CliProtocol.ts    # CLI 定向指令协议
@@ -50,7 +50,7 @@ Hearth/
 │   ├── index.ts              # 公共导出（createCore/startCore 等）
 │   ├── hearth.ts             # 命令行入口
 │   └── types.ts              # 共享类型定义
-├── tests/                    # 测试（100 个）
+├── tests/                    # 测试（132 个）
 │   ├── unit/                 # 单元测试（组件级）
 │   ├── integration/          # 集成测试（真实核心行为）
 │   ├── apps/                 # 应用测试（真实软件形态：聊天机器人/任务调度/智能家居/监控）
@@ -68,7 +68,7 @@ Hearth/
 │   ├── verify-docs.mjs       # 文档事实对照（15 条事实，docs:check 用）
 │   └── check-doc-duplicates.mjs # 跨文档重复检查
 ├── benchmarks/perf.js        # 性能基准（npm run bench）
-├── .github/workflows/ci.yml  # CI：typecheck + test + docs:check + build（Node 22/24）
+├── .github/workflows/ci.yml  # CI：typecheck + build + test + docs:check（Node 22/24）
 ├── package.json              # 包定义（依赖仅 yaml；engines >=22）
 ├── package-lock.json         # 依赖锁定
 ├── tsconfig.json             # 编译配置（src -> dist）
@@ -85,7 +85,7 @@ Hearth/
 ```bash
 npm run build          # 编译 src -> dist
 npm run typecheck      # 类型检查（tsc --noEmit）
-npm test               # 全部测试（单元+集成+应用，100 个）
+npm test               # 全部测试（单元+集成+应用，132 个）
 npm run test:unit      # 单元测试
 npm run test:integration # 集成测试
 npm run test:apps      # 应用测试
@@ -98,7 +98,7 @@ npm start              # 命令行启动
 
 - 日志类型：kebab-case（如 module-start、event-drop）
 - 事件名：两段式 来源:事件名（来源段由核心按调用方自动拼装，模块不可伪造）
-- 数组名：三段式 public:模块名:数组名
+- 对象名：三段式 public:模块名:对象名
 - 日志与错误消息：全英文（避免编码问题；代码注释可用中文）
 - 模块名全局唯一，不允许重复
 

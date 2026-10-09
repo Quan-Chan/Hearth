@@ -3,7 +3,7 @@
  * 它做的事只有两件：把命令用 sendTo 直接发给核心；核心把结果直接回传，onMessage 收到后打印。
  * 外加一个自己读日志文件的 grep 小功能。
  *
- * 信息直达（不走公共数组）：
+ * 信息直达（不走公共对象）：
  *  - 发送：ctx.sendTo('core', { cmd, args })        —— 直接发给核心执行
  *  - 接收：onMessage(ctx, message)                   —— 核心直接把结果回传（message.data = { cmd, ok, result, error }）
  * 任何模块用同样的接口调核心都不互相污染：结果只投递给发起方自己（source = 谁发的就回给谁）。
@@ -14,7 +14,7 @@ const path = require('path');
 
 let rl = null;
 
-/** 提交指令：直接用信息直达发给核心（无事件名、无公共数组）。返回送达与否由调用方忽略。 */
+/** 提交指令：直接用信息直达发给核心（无事件名、无公共对象）。返回送达与否由调用方忽略。 */
 function ask(ctx, cmd, args) {
   ctx.sendTo('core', { cmd, args: args || {} }).catch(() => {});
 }
@@ -40,7 +40,7 @@ function fmt(e) {
   }
   if (e.reason !== undefined) extra.push('reason=' + e.reason);
   if (e.error !== undefined) extra.push('error=' + String(e.error));
-  if (Array.isArray(e.removedArrays) && e.removedArrays.length) extra.push('removedArrays=' + e.removedArrays.join(','));
+  if (Array.isArray(e.removedObjects) && e.removedObjects.length) extra.push('removedObjects=' + e.removedObjects.join(','));
   return extra.length ? line + '  [' + extra.join('  ') + ']' : line;
 }
 
@@ -92,7 +92,7 @@ function helpText() {
     '  start <module>               start a module (even without an event)',
     '  stop <module>                stop a module',
     '  send <target|*> <name> [JSON]  send event directly (target=module name, comma separated; * broadcast)',
-    '  state                        list modules and shared arrays',
+    '  state                        list modules and shared objects',
     '  log [filter] [count]         view log timeline (grep log files)',
     '  print                        print test text',
     '  help / exit / quit',
@@ -189,23 +189,24 @@ module.exports = {
     } else if (r.cmd === 'state') {
       const s = r.result || {};
       const modules = s.modules || [];
-      const arrays = s.arrays || [];
+      const objects = s.objects || [];
       console.log('--- core state ---');
       for (const m of modules) {
         console.log('  module ' + m.name + '  [' + m.status + ']' + (m.error ? '  error=' + m.error : ''));
       }
-      if (!arrays.length) {
-        console.log('  (no shared arrays)');
+      if (!objects.length) {
+        console.log('  (no shared objects)');
       } else {
-        for (const name of arrays) {
-          let items;
+        for (const name of objects) {
+          let shown;
           try {
-            const arr = ctx.array(name);
-            items = arr.length > 5 ? JSON.stringify(arr.slice(0, 5)) + ' ... total ' + arr.length + ' items' : JSON.stringify(arr);
+            const value = ctx.object(name);
+            const text = JSON.stringify(value);
+            shown = text.length > 200 ? text.slice(0, 200) + ' ... total ' + text.length + ' chars' : text;
           } catch (err) {
-            items = '(fetch failed)';
+            shown = '(fetch failed)';
           }
-          console.log('  array ' + name + ' = ' + items);
+          console.log('  object ' + name + ' = ' + shown);
         }
       }
     } else if (r.cmd === 'exit') {

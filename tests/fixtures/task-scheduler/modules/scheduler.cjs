@@ -4,13 +4,13 @@ const timers = new Map();
 module.exports = {
   name: 'scheduler',
   start(ctx) {
-    ctx.exposeArray('queue', []);
-    ctx.exposeArray('done', []);
+    ctx.exposeObject('queue', { items: [] });
+    ctx.exposeObject('done', { items: [] });
   },
   onEvent(ctx, event) {
     if (event.name.endsWith(':task:submit')) {
       const t = event.data;
-      ctx.array('queue').push({ id: t.id, name: t.name, status: 'queued' });
+      ctx.object('queue').items.push({ id: t.id, name: t.name, status: 'queued' });
       const delay = typeof t.delayMs === 'number' ? t.delayMs : 10;
       const timer = setTimeout(() => {
         timers.delete(t.id);
@@ -23,9 +23,9 @@ module.exports = {
         clearTimeout(timer);
         timers.delete(event.data.id);
       }
-      const queue = ctx.array('queue');
+      const queue = ctx.object('queue').items;
       const idx = queue.findIndex((x) => x.id === event.data.id);
-      if (idx >= 0) ctx.array('queue').splice(idx, 1);
+      if (idx >= 0) ctx.object('queue').items.splice(idx, 1);
     }
   },
   stop() {

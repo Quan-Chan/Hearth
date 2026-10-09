@@ -82,6 +82,29 @@ test('轮转：单文件超 128KB 后下一条进新文件，压线记录保持�
   }
 });
 
+test('轮转：换文件之后同一批次内的记录进新文件，落盘顺序与内存一致', async () => {
+  const dir = mkTmpDir('rotate-burst');
+  try {
+    const file = path.join(dir, 'logs', 'event-stream.log');
+    const log = new EventStreamLog({ filePath: file });
+    log.record({ type: 'event', source: 'core', message: 'first' });
+    const blob = 'y'.repeat(130 * 1024); // 这条写入后文件超过 128KB，触发下一条换文件
+    log.record({ type: 'event', source: 'core', message: 'big-crossing', data: { blob } });
+    // 换文件之后（旧流尚未关闭）继续写：这两条都要落在新文件里，顺序不变
+    log.record({ type: 'event', source: 'core', message: 'after-1' });
+    log.record({ type: 'event', source: 'core', message: 'after-2' });
+    await log.close();
+    const files = log.listFiles();
+    assert.equal(files.length, 2);
+    const perFile = files.map((f) =>
+      fs.readFileSync(f, 'utf8').split(/\r?\n/).filter((l) => l.length > 0).map((l) => JSON.parse(l).message),
+    );
+    assert.deepEqual(perFile, [['first', 'big-crossing'], ['after-1', 'after-2']]);
+  } finally {
+    rmDir(dir);
+  }
+});
+
 test('跨天自动分文件（文件名日期与条目时间一致）', async () => {
   const dir = mkTmpDir('rotate-day');
   try {
@@ -148,4 +171,93 @@ test('不配置 maxMemoryEntries：内存不限', () => {
     log.record({ type: 'event', source: 'core', message: 'm' + i });
   }
   assert.equal(log.all().length, 100);
+});
+
+test('循环引用 data：record 不抛，内存仍保留该条记录', async () => {
+  const circular: unknown[] = [1];
+  circular.push(circular);
+  const log = new EventStreamLog({ logToConsole: true });
+  assert.doesNotThrow(() => log.record({ type: 'event', source: 'm', message: 'external:payload', data: circular }));
+  const all = log.all();
+  assert.equal(all.length, 1);
+  assert.equal(all[0].type, 'event');
+  assert.equal(all[0].source, 'm');
+  assert.equal(all[0].message, 'external:payload');
+  assert.equal(all[0].data, circular);
+  await log.close();
+});
+
+test('循环引用 data：落盘为合法 JSONL，去掉 data 并标注原因', async () => {
+  const dir = mkTmpDir('log-circular');
+  try {
+    const file = path.join(dir, 'logs', 'event-stream.log');
+    const log = new EventStreamLog({ filePath: file });
+    const circular: unknown[] = [1];
+    circular.push(circular);
+    log.record({ type: 'event', source: 'external', message: 'external:payload', event: 'external:payload', data: circular });
+    log.record({ type: 'event', source: 'core', message: 'after' });
+    await log.close();
+    const lines = log.readFileLines();
+    assert.equal(lines.length, 2);
+    const dropped = JSON.parse(lines[0]);
+    assert.equal(dropped.type, 'event');
+    assert.equal(dropped.source, 'external');
+    assert.equal(dropped.message, 'external:payload');
+    assert.equal(dropped.event, 'external:payload');
+    assert.equal('data' in dropped, false);
+    assert.equal(dropped.dataDropped, 'unserializable');
+    assert.equal(JSON.parse(lines[1]).message, 'after');
+  } finally {
+    rmDir(dir);
+  }
+});
+
+test('日志目录无法创建：record 不抛且内存保留该条记录', async () => {
+  const dir = mkTmpDir('log-nodir');
+  try {
+    const blocker = path.join(dir, 'blocker');
+    fs.writeFileSync(blocker, 'x');
+    const log = new EventStreamLog({ filePath: path.join(blocker, 'logs', 'event-stream.log') });
+    assert.doesNotThrow(() => log.record({ type: 'event', source: 'core', message: 'a' }));
+    assert.doesNotThrow(() => log.record({ type: 'event', source: 'core', message: 'b' }));
+    assert.deepEqual(log.all().map((e) => e.message), ['a', 'b']);
+    assert.equal(log.readFileLines().length, 0);
+    await log.close();
+  } finally {
+    rmDir(dir);
+  }
+});
+
+test('close：没写过日志也释放路径占用，同一路径可再次构造并写入', async () => {
+  const dir = mkTmpDir('log-close-reuse');
+  try {
+    const file = path.join(dir, 'logs', 'event-stream.log');
+    const first = new EventStreamLog({ filePath: file });
+    await first.close();
+    const second = new EventStreamLog({ filePath: file });
+    second.record({ type: 'event', source: 'core', message: 'after-reopen' });
+    await second.close();
+    assert.deepEqual(second.readFileLines().map((l) => JSON.parse(l).message), ['after-reopen']);
+  } finally {
+    rmDir(dir);
+  }
+});
+
+test('close：多次轮转后收尾，每个文件的内容都完整', async () => {
+  const dir = mkTmpDir('log-close-rotate');
+  try {
+    const file = path.join(dir, 'logs', 'event-stream.log');
+    const log = new EventStreamLog({ filePath: file });
+    const blob = 'z'.repeat(130 * 1024);
+    const expected: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      log.record({ type: 'event', source: 'core', message: 'big-' + i, data: { blob } });
+      expected.push('big-' + i);
+    }
+    await log.close();
+    assert.equal(log.listFiles().length, 6);
+    assert.deepEqual(log.readFileLines().map((l) => JSON.parse(l).message), expected);
+  } finally {
+    rmDir(dir);
+  }
 });

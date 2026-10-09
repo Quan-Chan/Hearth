@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'path';
 import { Hearth } from '../../src/core/Hearth';
-import { mkTmpDir, rmDir, arr } from '../helpers';
+import { mkTmpDir, rmDir, items } from '../helpers';
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const MODULE_DIR = path.join(ROOT, 'tests', 'fixtures', 'monitoring', 'modules');
@@ -22,17 +22,17 @@ test('监控告警：指标聚合去重 + 阈值告警 + 历史归档', async ()
     // 低值：只聚合，不告警
     await core.sendEvent('app:metric', { name: 'cpu', value: 30 });
     await core.sendEvent('app:metric', { name: 'mem', value: 80 });
-    assert.equal(arr(core, 'public:collector:latest').length, 2);
-    assert.equal(arr(core, 'public:alerting:active').length, 0);
-    assert.equal(arr(core, 'public:dashboard:history').length, 0);
+    assert.equal(items(core, 'public:collector:latest').length, 2);
+    assert.equal(items(core, 'public:alerting:active').length, 0);
+    assert.equal(items(core, 'public:dashboard:history').length, 0);
     // 高值：告警
     await core.sendEvent('app:metric', { name: 'cpu', value: 150 });
-    assert.equal(arr(core, 'public:alerting:active').length, 1);
-    assert.equal(arr(core, 'public:alerting:active')[0].value, 150);
-    assert.equal(arr(core, 'public:dashboard:history').length, 1);
+    assert.equal(items(core, 'public:alerting:active').length, 1);
+    assert.equal(items(core, 'public:alerting:active')[0].value, 150);
+    assert.equal(items(core, 'public:dashboard:history').length, 1);
     // 再次上报同名指标 -> 覆盖旧值（去重）
     await core.sendEvent('app:metric', { name: 'cpu', value: 42 });
-    const latest = arr(core, 'public:collector:latest');
+    const latest = items(core, 'public:collector:latest');
     assert.equal(latest.length, 2);
     const cpu = latest.find((m) => m.name === 'cpu');
     assert.equal(cpu.value, 42);

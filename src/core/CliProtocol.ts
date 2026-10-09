@@ -34,7 +34,7 @@ export class CliProtocol {
       await this.core.startModule(name, 'cli');
       result.result = { module: name, status: this.core.getModule(name)?.status };
     },
-    // 关闭模块（其公开数组随之消失）
+    // 关闭模块（其公开对象随之消失）
     stop: async (args, result) => {
       const name = String(args.module ?? '');
       if (!name) throw new Error('stop command missing module');
@@ -56,12 +56,12 @@ export class CliProtocol {
                 .filter(Boolean);
       result.result = { recipients: await this.core.sendDirected(targets, name, args.data, source) };
     },
-    // 查询模块与公共数组清单（数组用匹配拉取 '*' 列出全名）
+    // 查询模块与公共对象清单（对象用匹配拉取 '*' 列出全名）
     state: async (_args, result) => {
-      const matched = this.core.array('*') as Record<string, unknown[]>;
+      const matched = this.core.object('*') as Record<string, unknown>;
       result.result = {
         modules: this.core.listModules().map((m) => ({ name: m.name, status: m.status })),
-        arrays: Object.keys(matched),
+        objects: Object.keys(matched),
       };
     },
   };
@@ -100,7 +100,7 @@ export class CliProtocol {
       result.error = err instanceof Error ? err.message : String(err);
       this.core.writeLog(LOG_TYPES.ERROR, 'core', 'CLI command failed: ' + (err instanceof Error ? err.message : String(err)));
     }
-    // 结果直接回传发起方（定向信息，不进任何数组）
+    // 结果直接回传发起方（定向信息，不进任何公共对象）
     await this.core.sendTo(from, result as Record<string, unknown>, 'core');
   }
 }

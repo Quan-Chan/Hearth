@@ -7,11 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Worker } from 'worker_threads';
-import * as fs from 'fs';
-import * as path from 'path';
-import { mkTmpDir, rmDir } from '../helpers';
-
-const ROOT = path.resolve(__dirname, '..', '..', '..');
+import { coreEntryPath, mkTmpDir, rmDir } from '../helpers';
 
 function runInWorker(guardOn: boolean, dir: string): Promise<{ hasRejection: boolean; hasException: boolean; errCount: number; exitOk: boolean }> {
   return new Promise((resolve, reject) => {
@@ -35,7 +31,7 @@ function runInWorker(guardOn: boolean, dir: string): Promise<{ hasRejection: boo
     `;
     const w = new Worker(workerCode, {
       eval: true,
-      workerData: { corePath: path.join(ROOT, 'dist', 'core', 'Hearth.js'), dir },
+      workerData: { corePath: coreEntryPath, dir },
     });
     w.on('message', (msg) => resolve({ ...msg, exitOk: true }));
     w.on('error', (err) => reject(err));

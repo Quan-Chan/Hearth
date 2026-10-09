@@ -27,3 +27,9 @@ A config update only reloads the YAML itself:
 - Config sets enabled to false: the running module is stopped
 
 Code reload is initiated by the module itself (requestReload); a config update does not reload code.
+
+## Renaming
+
+When the name inside an existing YAML file changes, it is handled as one removal followed by one registration: the old name fires onRemove (the old instance is stopped and its status and shared objects are unregistered), and the new name is registered through onLoad, so the new instance starts when its start condition is next met. The module name is a global identity: the slot table, the forwarding tables, and shared object names are all indexed by it, so a rename does not keep the running instance.
+
+When the target name is already taken by another file, the removal does not happen: the file's new name is rejected by the consumer (duplicate names are not allowed), the old name keeps its instance running, and one rejection error is logged each round until the conflict is fixed.

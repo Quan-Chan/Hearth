@@ -4,15 +4,18 @@
 
 A module can request restarting itself after replacing the program file:
 
-\`\`\`js
+```js
 await ctx.requestReload();
-\`\`\`
+```
 
 Process:
 
 1. The core validates that the new code can be loaded
 2. Validation fails: the old instance keeps running, and requestReload returns false
-3. Validation passes: the old instance is stopped (its exposed arrays are unregistered), a new instance starts with the validated code, and requestReload returns true
+3. Validation passes: the old instance is stopped (its exposed objects are unregistered), and a new instance starts with the validated code
+4. Returns whether the new instance is running: a skipped start (shutting down, starting, disabled, timeout lock) or a failed new instance returns false
+
+false covers three cases: the new code failed validation (the old instance keeps running), the start was skipped (the old instance is stopped), and the new instance failed to start (the old instance is stopped). To tell them apart, query getModule(name).status: false with a running status means the old instance is still running.
 
 State saving and restoration are the module's responsibility; the core does not migrate any state.
 

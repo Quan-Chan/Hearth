@@ -2,6 +2,8 @@
 
 [English](README.md) | [中文](README.zh.md)
 
+[![CI](https://github.com/Quan-Chan/Hearth/actions/workflows/ci.yml/badge.svg)](https://github.com/Quan-Chan/Hearth/actions/workflows/ci.yml)
+
 **版本 0.1.0（预发布）**
 
 Hearth 是一个事件驱动的模块化框架核心，运行在 Node.js 上，使用 TypeScript 编写。
@@ -18,7 +20,7 @@ Hearth 是一个事件驱动的模块化框架核心，运行在 Node.js 上，�
 
 - 事件广播：纯字符串信号，携带可选内容
 - 定向消息：直接投递给指定模块
-- 共享数组：公开的数组对象引用，任何模块可读取与修改
+- 共享对象：公开的对象引用，任何模块可读取与修改
 
 ## 快速开始
 

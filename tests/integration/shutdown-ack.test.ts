@@ -11,9 +11,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Hearth } from '../../src/core/Hearth';
 import { mkTmpDir, rmDir, yamlFor } from '../helpers';
-const ACK_CJS = "const fs = require('fs');\nconst path = require('path');\nconst LOG = path.join(__dirname, 'ack.log');\nmodule.exports = {\n  start(ctx) { ctx.exposeArray('marks', ['started']); },\n  stop(ctx) {\n    fs.appendFileSync(LOG, 'stop-called\\n');\n    // 停止逻辑需要异步收尾：等收尾完成后再返回（返回 = 已关闭）\n    return new Promise((resolve) => {\n      setTimeout(() => {\n        fs.appendFileSync(LOG, 'cleanup-finished\\n');\n        resolve();\n      }, 80);\n    });\n  },\n};\n";
-const HANG_CJS = "module.exports = {\n  start(ctx) { ctx.exposeArray('marks', ['started']); },\n  stop() { return new Promise(() => {}); },\n};\n";
-const PLAIN_CJS = "module.exports = {\n  start(ctx) { ctx.exposeArray('marks', ['ok']); },\n  stop() {},\n};\n";
+const ACK_CJS = "const fs = require('fs');\nconst path = require('path');\nconst LOG = path.join(__dirname, 'ack.log');\nmodule.exports = {\n  start(ctx) { ctx.exposeObject('marks', { items: ['started'] }); },\n  stop(ctx) {\n    fs.appendFileSync(LOG, 'stop-called\\n');\n    // 停止逻辑需要异步收尾：等收尾完成后再返回（返回 = 已关闭）\n    return new Promise((resolve) => {\n      setTimeout(() => {\n        fs.appendFileSync(LOG, 'cleanup-finished\\n');\n        resolve();\n      }, 80);\n    });\n  },\n};\n";
+const HANG_CJS = "module.exports = {\n  start(ctx) { ctx.exposeObject('marks', { items: ['started'] }); },\n  stop() { return new Promise(() => {}); },\n};\n";
+const PLAIN_CJS = "module.exports = {\n  start(ctx) { ctx.exposeObject('marks', { items: ['ok'] }); },\n  stop() {},\n};\n";
 
 test('停止协议：所有模块返回"已关闭"（stop() resolve）后核心才关闭', async () => {
   const dir = mkTmpDir('stop-ok');
@@ -89,7 +89,7 @@ test('停机进行中：事件与定向消息抛"正在关闭"，配置变更被
       path.join(dir, 'slowstop.cjs'),
       `module.exports = {
   name: 'slowstop',
-  start(ctx) { ctx.exposeArray('m', []); },
+  start(ctx) { ctx.exposeObject('m', { items: [] }); },
   stop() { return new Promise((r) => setTimeout(r, 500)); },
 };
 `,

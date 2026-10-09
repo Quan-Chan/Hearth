@@ -4,6 +4,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+/** 测试编译产物的核心入口：与 tsconfig.test.json 的 outDir 对应，不读取 dist。 */
+export const coreEntryPath = path.resolve(__dirname, '..', '..', '.test-build', 'src', 'core', 'Hearth.js');
+
 /** 在 tests/.tmp 下创建唯一临时目录（工作区内，避免沙箱限制）。 */
 export function mkTmpDir(prefix: string): string {
   const dir = path.resolve(__dirname, '..', '.tmp', prefix + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8));
@@ -36,11 +39,21 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** 精确拉取公共数组（匹配拉取接口的数组形态断言助手）：模式不含通配符时返回数组引用。 */
-export function arr<T = any>(core: { array(pattern: string): unknown }, pattern: string): T[] {
-  const r = core.array(pattern);
-  if (Array.isArray(r)) return r as T[];
-  throw new Error('匹配拉取返回了映射，需要精确名: ' + pattern);
+/** 精确拉取公共对象（匹配拉取接口的对象形态断言助手）：模式不含通配符时返回对象引用。 */
+export function obj<T extends object = Record<string, unknown>>(
+  core: { object(pattern: string): unknown },
+  pattern: string,
+): T {
+  const r = core.object(pattern);
+  if (typeof r !== 'object' || r === null || Array.isArray(r)) {
+    throw new Error('匹配拉取返回了映射，需要精确名: ' + pattern);
+  }
+  return r as T;
+}
+
+/** 精确拉取公共对象里的 items 字段（夹具统一把待观察的内容放在该字段）。 */
+export function items<T = any>(core: { object(pattern: string): unknown }, pattern: string): T[] {
+  return obj<{ items: T[] }>(core, pattern).items;
 }
 
 /** 写入模块夹具：YAML 配置 + CJS 程序。返回 { yamlPath, programPath }。 */

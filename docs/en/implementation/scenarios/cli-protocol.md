@@ -11,8 +11,8 @@ The cli module sends commands to the core through the directed channel; the core
 
 ## Boundaries
 
-- The stop command makes the module array disappear immediately; holders of references throw.
+- The stop command makes the module object disappear immediately; holders of references throw.
 - The directed return depends on the initiator running and having onMessage: commands from external processes receive no result.
 - When the module started by the start command fails, ok is still true; the error must be looked up separately via state.
 - send succeeds silently for invalid targets: ok is true but there is no recipient.
-- Array names have no owner validation; any module can inject commands (see known issue 20).
+- Object names have no owner validation; any module can inject commands (see known issue 20).

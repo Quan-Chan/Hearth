@@ -4,7 +4,7 @@ module.exports = {
   onEvent(ctx, event) {
     if (!event.name.endsWith(':task:due')) return;
     const t = event.data;
-    ctx.array('public:scheduler:done').push({ id: t.id, name: t.name, status: 'done', completedAt: Date.now() });
+    ctx.object('public:scheduler:done').items.push({ id: t.id, name: t.name, status: 'done', completedAt: Date.now() });
     ctx.sendEvent('task:done', { id: t.id, name: t.name });
   },
 };

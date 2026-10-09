@@ -3,18 +3,18 @@ import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Hearth } from '../../src/core/Hearth';
-import { mkTmpDir, rmDir, waitFor, sleep, arr, yamlFor } from '../helpers';
+import { mkTmpDir, rmDir, waitFor, sleep, items, yamlFor } from '../helpers';
 
 const GREETER = `module.exports = {
   name: 'greeter',
-  start(ctx) { ctx.exposeArray('out', []); },
-  onEvent(ctx, event) { ctx.array('out').push(event.name); },
+  start(ctx) { ctx.exposeObject('out', { items: [] }); },
+  onEvent(ctx, event) { ctx.object('out').items.push(event.name); },
 };
 `;
 const LATE = `module.exports = {
   name: 'late',
-  onEvent(ctx, event) { ctx.array('marks').push(event.name); },
-  start(ctx) { ctx.exposeArray('marks', ['late-started']); },
+  onEvent(ctx, event) { ctx.object('marks').items.push(event.name); },
+  start(ctx) { ctx.exposeObject('marks', { items: ['late-started'] }); },
 };
 `;
 
@@ -35,7 +35,7 @@ test('监听模块文件夹：新增 YAML 自动加载并注册，不补启动�
     await waitFor(() => core.getModule('greeter')!.status === 'running');
     // 事件可以正常送达
     await core.sendEvent('greet', { name: 'world' });
-    assert.deepEqual(arr(core as any, 'public:greeter:out'), ['external:greet']);
+    assert.deepEqual(items(core as any, 'public:greeter:out'), ['external:greet']);
     await core.stop();
   } finally {
     rmDir(dir);
@@ -55,7 +55,7 @@ test('新增模块：启动事件未发生过则不启动，事件到来时启�
     // 事件出现 -> 启动
     await core.sendEvent('later:event');
     await waitFor(() => core.getModule('late')!.status === 'running');
-    assert.deepEqual(arr(core as any, 'public:late:marks'), ['late-started', 'external:later:event']);
+    assert.deepEqual(items(core as any, 'public:late:marks'), ['late-started', 'external:later:event']);
     await core.stop();
   } finally {
     rmDir(dir);
@@ -82,9 +82,9 @@ test('YAML 变化：YAML 层热生效——索引即时更新，模块不重启�
     assert.equal(core.log.byType('module-stop').filter((s) => s.source === 'greeter').length, 0);
     // 匹配索引即时更新：新监听生效，旧监听失效
     await core.sendEvent('greet');
-    assert.deepEqual(arr(core as any, 'public:greeter:out'), []);
+    assert.deepEqual(items(core as any, 'public:greeter:out'), []);
     await core.sendEvent('greet:new');
-    assert.deepEqual(arr(core as any, 'public:greeter:out'), ['external:greet:new']);
+    assert.deepEqual(items(core as any, 'public:greeter:out'), ['external:greet:new']);
     await core.stop();
   } finally {
     rmDir(dir);
@@ -143,7 +143,7 @@ test('相同内容重写：只改 mtime 不触发 config-update（touch 假阳�
     assert.equal(core.log.byType('config-update').filter((l) => l.source === 'greeter').length, 0);
     // 事件仍正常送达（模块未被打断重启）
     await core.sendEvent('greet');
-    assert.deepEqual(arr(core as any, 'public:greeter:out'), ['external:greet']);
+    assert.deepEqual(items(core as any, 'public:greeter:out'), ['external:greet']);
     await core.stop();
   } finally {
     rmDir(dir);
@@ -166,9 +166,9 @@ test('快速连续改写：最终收敛到最新配置（YAML 层，不重启）
     await waitFor(() => (core.getModule('greeter')!.config.listen ?? []).includes('*:greet:final'));
     assert.equal(core.log.byType('module-start').filter((s) => s.source === 'greeter').length, 1, '未重启');
     await core.sendEvent('greet');
-    assert.deepEqual(arr(core as any, 'public:greeter:out'), []);
+    assert.deepEqual(items(core as any, 'public:greeter:out'), []);
     await core.sendEvent('greet:final');
-    assert.deepEqual(arr(core as any, 'public:greeter:out'), ['external:greet:final']);
+    assert.deepEqual(items(core as any, 'public:greeter:out'), ['external:greet:final']);
     await core.stop();
   } finally {
     rmDir(dir);
@@ -203,9 +203,9 @@ test('模块改写自己的 YAML：listen 事件表变化，核心同步（不�
   try {
     const selfedit = `module.exports = {
   name: 'selfedit',
-  start(ctx) { ctx.exposeArray('marks', ['started']); },
+  start(ctx) { ctx.exposeObject('marks', { items: ['started'] }); },
   onEvent(ctx, event) {
-    ctx.array('marks').push(event.name);
+    ctx.object('marks').items.push(event.name);
     if (event.name.endsWith(':selfedit:add')) {
       const fs = require('fs');
       const path = require('path');
@@ -229,7 +229,7 @@ test('模块改写自己的 YAML：listen 事件表变化，核心同步（不�
     const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 40 });
     await core.start();
     await waitFor(() => core.getModule('selfedit')?.status === 'running');
-    assert.deepEqual(arr(core as any, 'public:selfedit:marks'), ['started']);
+    assert.deepEqual(items(core as any, 'public:selfedit:marks'), ['started']);
     // 模块在 onEvent 中改写自己的 YAML（此刻只监听 selfedit:add）
     await core.sendEvent('selfedit:add');
     // 核心感知配置变化（config-update）——YAML 层热生效
@@ -238,13 +238,13 @@ test('模块改写自己的 YAML：listen 事件表变化，核心同步（不�
     assert.deepEqual(core.getModule('selfedit')!.config.listen, ['*:selfedit:add', '*:selfedit:extra', '*:selfedit:*']);
     // 不重启、不重载代码：start 只发生一次，模块实例状态保留
     assert.equal(core.log.byType('module-start').filter((s) => s.source === 'selfedit').length, 1, '模块未重启');
-    assert.deepEqual(arr(core as any, 'public:selfedit:marks'), ['started', 'external:selfedit:add'], '实例状态保留');
+    assert.deepEqual(items(core as any, 'public:selfedit:marks'), ['started', 'external:selfedit:add'], '实例状态保留');
     // 新加的事件名即时生效（索引已更新）
     await core.sendEvent('selfedit:extra');
-    assert.deepEqual(arr(core as any, 'public:selfedit:marks'), ['started', 'external:selfedit:add', 'external:selfedit:extra']);
+    assert.deepEqual(items(core as any, 'public:selfedit:marks'), ['started', 'external:selfedit:add', 'external:selfedit:extra']);
     // 新加的通配符监听生效
     await core.sendEvent('selfedit:wild:ping');
-    assert.deepEqual(arr(core as any, 'public:selfedit:marks'), ['started', 'external:selfedit:add', 'external:selfedit:extra', 'external:selfedit:wild:ping']);
+    assert.deepEqual(items(core as any, 'public:selfedit:marks'), ['started', 'external:selfedit:add', 'external:selfedit:extra', 'external:selfedit:wild:ping']);
     await core.stop();
   } finally {
     rmDir(dir);
@@ -256,9 +256,9 @@ test('模块改写自己的 YAML：startEvents 变化，新的启动事件可自
   try {
     const bootcfg = `module.exports = {
   name: 'bootcfg',
-  start(ctx) { ctx.exposeArray('marks', ['started']); },
+  start(ctx) { ctx.exposeObject('marks', { items: ['started'] }); },
   onEvent(ctx, event) {
-    ctx.array('marks').push(event.name);
+    ctx.object('marks').items.push(event.name);
     if (event.name.endsWith(':bootcfg:config')) {
       const fs = require('fs');
       const path = require('path');
@@ -291,7 +291,7 @@ test('模块改写自己的 YAML：startEvents 变化，新的启动事件可自
     await core.sendEvent('bootcfg:again');
     await waitFor(() => core.getModule('bootcfg')!.status === 'running');
     assert.deepEqual(core.getModule('bootcfg')!.config.startEvents, ['core:startup', '*:bootcfg:again']);
-    assert.deepEqual(arr(core as any, 'public:bootcfg:marks'), ['started']);
+    assert.deepEqual(items(core as any, 'public:bootcfg:marks'), ['started']);
     const starts = core.log.byType('module-start').filter((s) => s.source === 'bootcfg');
     assert.equal(starts[starts.length - 1].reason, 'external:bootcfg:again');
     await core.stop();
@@ -299,3 +299,180 @@ test('模块改写自己的 YAML：startEvents 变化，新的启动事件可自
     rmDir(dir);
   }
 });
+
+test('YAML 改名：name 变化按移除加重建处理，旧名槽位不残留，删除后两个名字都不残留', async () => {
+  const dir = mkTmpDir('rename');
+  try {
+    const ren = `module.exports = {
+  name: 'ren',
+  start(ctx) { ctx.exposeObject('marks', { items: ['started'] }); },
+  stop(ctx) { require('fs').appendFileSync(require('path').join(__dirname, 'stops.txt'), ctx.moduleName + '\\n'); },
+};
+`;
+    fs.writeFileSync(path.join(dir, 'ren.cjs'), ren);
+    fs.writeFileSync(path.join(dir, 'ren.yaml'), yamlFor('ren', { startEvents: ['core:startup'] }));
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 40 });
+    await core.start();
+    await waitFor(() => core.getModule('ren')?.status === 'running');
+    assert.deepEqual(core.listModules().map((m) => m.name), ['ren']);
+    // 只改 name 字段，文件路径不变
+    fs.writeFileSync(path.join(dir, 'ren.yaml'), yamlFor('ren2', { startEvents: ['core:startup'] }));
+    await waitFor(() => core.getModule('ren') === undefined);
+    await waitFor(
+      () => core.listModules().length === 1 && core.getModule('ren2') !== undefined,
+    );
+    assert.deepEqual(core.listModules().map((m) => m.name), ['ren2']);
+    // 旧名走移除路径，旧实例被停止
+    assert.ok(core.log.byType('config-remove').some((l) => l.source === 'ren'));
+    assert.deepEqual(fs.readFileSync(path.join(dir, 'stops.txt'), 'utf8').split('\n').filter((l) => l.length > 0), ['ren']);
+    // 文件删除后，两个名字都不残留
+    fs.rmSync(path.join(dir, 'ren.yaml'));
+    await waitFor(() => core.listModules().length === 0);
+    assert.equal(core.getModule('ren'), undefined);
+    assert.equal(core.getModule('ren2'), undefined);
+    await core.stop();
+  } finally {
+    rmDir(dir);
+  }
+});
+
+test('YAML 改名撞上已占用的模块名：旧名不移除，旧实例继续运行', async () => {
+  const dir = mkTmpDir('rename-taken');
+  try {
+    const prog = (name: string): string => `module.exports = {
+  name: '${name}',
+  start(ctx) { ctx.exposeObject('marks', { items: ['started'] }); },
+};
+`;
+    fs.writeFileSync(path.join(dir, 'one.cjs'), prog('one'));
+    fs.writeFileSync(path.join(dir, 'two.cjs'), prog('two'));
+    const oneYaml = path.join(dir, 'one.yaml');
+    fs.writeFileSync(oneYaml, yamlFor('one', { startEvents: ['core:startup'] }));
+    fs.writeFileSync(path.join(dir, 'two.yaml'), yamlFor('two', { startEvents: ['core:startup'] }));
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 40 });
+    await core.start();
+    await waitFor(() => core.getModule('one')?.status === 'running' && core.getModule('two')?.status === 'running');
+    // one.yaml 的 name 改成已被 two.yaml 占用的 two（内容与 two.yaml 不同，改名会被消费方拒绝）
+    fs.writeFileSync(oneYaml, yamlFor('two', { startEvents: ['core:startup'], listen: ['*:ping'] }));
+    await waitFor(() =>
+      core.log.all().some((l) => l.type === 'error' && l.source === 'two' && String(l.message).includes('rejected')),
+    );
+    // 改名被拒：one 没有被移除，两个模块都还在运行
+    assert.deepEqual(core.listModules().map((m) => m.name), ['one', 'two']);
+    assert.equal(core.getModule('one')!.status, 'running');
+    assert.deepEqual(items(core, 'public:one:marks'), ['started']);
+    await core.stop();
+  } finally {
+    rmDir(dir);
+  }
+});
+
+// ============ 启动过程中改 YAML：在途启动的收敛 ============
+
+/** start() 阻塞在 gate 文件上（测试放行后才返回），用于制造"启动中"窗口。 */
+const SLOW_START = `const fs = require('fs');
+const path = require('path');
+const HOOK = path.join(__dirname, 'slow.log');
+const GATE = path.join(__dirname, 'slow.gate');
+module.exports = {
+  start() {
+    fs.appendFileSync(HOOK, 'start\\n');
+    return new Promise((resolve) => {
+      const timer = setInterval(() => {
+        if (fs.existsSync(GATE)) {
+          clearInterval(timer);
+          fs.appendFileSync(HOOK, 'start-return\\n');
+          resolve();
+        }
+      }, 10);
+      timer.unref();
+    });
+  },
+  stop() { fs.appendFileSync(HOOK, 'stop\\n'); },
+};
+`;
+
+test('启动中改 YAML：在途启动完成后状态与实际一致（不留在 starting）', async () => {
+  const dir = mkTmpDir('start-update');
+  try {
+    const yamlPath = path.join(dir, 'slowstart.yaml');
+    fs.writeFileSync(path.join(dir, 'slowstart.cjs'), SLOW_START);
+    fs.writeFileSync(yamlPath, yamlFor('slowstart', { listen: ['*:slow:ping'] }));
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 40 });
+    await core.start();
+    // 启动不等待返回：start() 阻塞在 gate 上，状态停在 starting
+    const starting = core.startModule('slowstart', 'manual');
+    await waitFor(() => core.getModule('slowstart')!.status === 'starting');
+    // 启动中改写 YAML：配置更新作废这次在途启动（代数递增）
+    fs.writeFileSync(yamlPath, yamlFor('slowstart', { listen: ['*:slow:ping', '*:slow:other'] }));
+    await waitFor(() => core.log.byType('config-update').some((l) => l.source === 'slowstart'));
+    fs.writeFileSync(path.join(dir, 'slow.gate'), '');
+    await starting;
+    // 在途启动完成后：状态收敛为 stopped（启动结果作废并被回收），与实际一致
+    assert.equal(core.getModule('slowstart')!.status, 'stopped');
+    const hook = fs.readFileSync(path.join(dir, 'slow.log'), 'utf8');
+    assert.ok(hook.includes('start-return'), 'start 已返回');
+    assert.ok(hook.includes('stop'), '作废的实例已被回收（stop 调用过）');
+    // 状态已收敛：此后停止走正常运行分支，不再记 cancelled during start
+    await core.stopModule('slowstart');
+    assert.equal(
+      core.log.byType('module-stop').filter((l) => l.source === 'slowstart' && String(l.message).includes('cancelled during start')).length,
+      0,
+    );
+    // 启动锁已释放：可以再次启动（start 第二次不再阻塞在 gate 上）
+    await core.startModule('slowstart', 'manual');
+    assert.equal(core.getModule('slowstart')!.status, 'running');
+    await core.stop();
+  } finally {
+    rmDir(dir);
+  }
+});
+
+/** start() 阻塞在 gate 上，放行后公开一个对象：用于观察作废实例公开的对象是否被注销。 */
+const SLOW_ARRAY_START = `const fs = require('fs');
+const path = require('path');
+const GATE = path.join(__dirname, 'slowarr.gate');
+module.exports = {
+  name: 'slowarr',
+  start(ctx) {
+    return new Promise((resolve) => {
+      const timer = setInterval(() => {
+        if (fs.existsSync(GATE)) {
+          clearInterval(timer);
+          resolve();
+        }
+      }, 10);
+      timer.unref();
+    }).then(() => { ctx.exposeObject('marks', { items: ['started'] }); });
+  },
+  stop() {},
+};
+`;
+
+test('启动中改 YAML：作废实例公开的对象一并注销，模块可再次启动', async () => {
+  const dir = mkTmpDir('start-update-array');
+  try {
+    const yamlPath = path.join(dir, 'slowarr.yaml');
+    fs.writeFileSync(path.join(dir, 'slowarr.cjs'), SLOW_ARRAY_START);
+    fs.writeFileSync(yamlPath, yamlFor('slowarr', { listen: ['*:slowarr:ping'] }));
+    const core = new Hearth({ logFile: path.join(dir, 'core.log'), moduleDir: dir, watch: true, pollIntervalMs: 40 });
+    await core.start();
+    const starting = core.startModule('slowarr', 'manual');
+    await waitFor(() => core.getModule('slowarr')!.status === 'starting');
+    fs.writeFileSync(yamlPath, yamlFor('slowarr', { listen: ['*:slowarr:ping', '*:slowarr:other'] }));
+    await waitFor(() => core.log.byType('config-update').some((l) => l.source === 'slowarr'));
+    fs.writeFileSync(path.join(dir, 'slowarr.gate'), '');
+    await starting;
+    assert.equal(core.getModule('slowarr')!.status, 'stopped');
+    // 作废实例公开的对象随实例一起注销：名字不被已停止的实例占住
+    assert.throws(() => core.object('public:slowarr:marks'), /not found/);
+    // 因此可以再次启动，同名对象重新公开
+    await core.startModule('slowarr', 'manual');
+    assert.equal(core.getModule('slowarr')!.status, 'running');
+    assert.deepEqual(items(core, 'public:slowarr:marks'), ['started']);
+    await core.stop();
+  } finally {
+    rmDir(dir);
+  }
+});
+

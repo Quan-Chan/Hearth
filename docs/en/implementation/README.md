@@ -6,13 +6,13 @@ This document describes how each Hearth feature is implemented. It is intended f
 
 | Component | File | Responsibility |
 | --- | --- | --- |
-| ConnectCore | src/core/ConnectCore.ts | Core class: lifecycle, config hot-reload, array API, queries; delegates to the two below |
+| Hearth | src/core/Hearth.ts | Core class: lifecycle, config hot-reload, object API, queries; delegates to the two below |
 | ModuleManager | src/core/ModuleManager.ts | Module state machine: start/stop/restart/shutdown + slot table |
 | EventDispatcher | src/core/EventDispatcher.ts | Event dispatch and directed channels: sendEvent/sendDirected/sendTo |
 | MatchIndex | src/core/MatchIndex.ts | Event matching index: exact table + wildcard list |
 | EventMatcher | src/core/EventMatcher.ts | Event name matching rules and regex compilation cache |
 | ConfigWatcher | src/core/ConfigWatcher.ts | Module folder polling and YAML parsing |
-| ArrayRegistry | src/core/ArrayRegistry.ts | Shared array registry (three-part names, matching pull) |
+| ObjectRegistry | src/core/ObjectRegistry.ts | Shared object registry (three-part names, matching pull) |
 | EventStreamLog | src/core/EventStreamLog.ts | Two-tier log storage and rotation |
 | CliProtocol | src/core/CliProtocol.ts | CLI directed instruction protocol |
 | ModuleContext | src/core/ModuleContext.ts | Module context (ctx) |
@@ -38,13 +38,13 @@ Correspondence between the 12 chapters of the requirement document and the imple
 | 2 Config hot-reload | ConfigWatcher | Module Config | config-watching | yaml-watcher |
 | 3.1 Event broadcast | EventDispatcher | Event Broadcast | event-dispatch | core-lifecycle |
 | 3.2 Directed messages | EventDispatcher | Directed Messages | event-dispatch | directed-message |
-| 3.3 Shared arrays | ArrayRegistry | Shared Arrays | shared-arrays | array-registry/public-arrays |
+| 3.3 Shared objects | ObjectRegistry | Shared Objects | shared-objects | object-registry/public-objects |
 | 4 Module lifecycle | ModuleManager | Restart and Status | module-lifecycle | core-lifecycle/module-reload |
-| 5 Core lifecycle | ConnectCore | Host Integration Interface | scenarios cold-start/shutdown | boot/shutdown-ack |
-| 6 Failure handling | ConnectCore | Module Program | failure-handling | core-lifecycle |
+| 5 Core lifecycle | Hearth | Host Integration Interface | scenarios cold-start/shutdown | boot/shutdown-ack |
+| 6 Failure handling | Hearth | Module Program | failure-handling | core-lifecycle |
 | 7 Logging | EventStreamLog | Logs and Command Line | logging | event-stream-log/log-format |
 | 8 Command line | CliProtocol/cli | Logs and Command Line | cli-protocol | cli-commands |
-| 9 Host integration | ConnectCore | Host Integration Interface | event-dispatch | usability |
+| 9 Host integration | Hearth | Host Integration Interface | event-dispatch | usability |
 | 10 Tech stack | tsconfig | — | verification | all |
 
 ## Measured performance
@@ -61,7 +61,7 @@ Correspondence between the 12 chapters of the requirement document and the imple
 - Event dispatch and matching index: docs/en/implementation/event-dispatch.md
 - Module lifecycle: docs/en/implementation/module-lifecycle.md
 - Config watching: docs/en/implementation/config-watching.md
-- Shared arrays: docs/en/implementation/shared-arrays.md
+- Shared objects: docs/en/implementation/shared-objects.md
 - Logging: docs/en/implementation/logging.md
 - CLI protocol: docs/en/implementation/cli-protocol.md
 - Failure handling and guarding: docs/en/implementation/failure-handling.md

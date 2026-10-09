@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 import { startCore, createCore } from '../../src/index';
-import { mkTmpDir, rmDir, arr, yamlFor } from '../helpers';
+import { mkTmpDir, rmDir, items, yamlFor } from '../helpers';
 
 test('startCore：一次启动软件，模块按事件自动启动', async () => {
   const tmp = mkTmpDir('boot');
@@ -15,7 +15,7 @@ test('startCore：一次启动软件，模块按事件自动启动', async () =>
     // 自包含夹具：hello 模块 core:startup 即启动；echo 模块监听 greet
     fs.writeFileSync(
       path.join(tmp, 'hello.cjs'),
-      `module.exports = { name: 'hello', start(ctx){ ctx.exposeArray('marks', ['ready']); }, onEvent(ctx, e){ ctx.array('marks').push(e.name); } };`,
+      `module.exports = { name: 'hello', start(ctx){ ctx.exposeObject('marks', { items: ['ready'] }); }, onEvent(ctx, e){ ctx.object('marks').items.push(e.name); } };`,
     );
     fs.writeFileSync(path.join(tmp, 'hello.yaml'), yamlFor('hello', { startEvents: ['core:startup'], listen: ['*:greet'] }));
     fs.writeFileSync(
@@ -31,7 +31,7 @@ test('startCore：一次启动软件，模块按事件自动启动', async () =>
     assert.equal(core.getModule('hello')!.status, 'running');
     // 链式协作：echo 事件 -> greet 事件 -> hello 记录
     await core.sendEvent('echo', { text: '世界' });
-    assert.deepEqual(arr(core as any, 'public:hello:marks'), ['ready', 'echo:greet']);
+    assert.deepEqual(items(core as any, 'public:hello:marks'), ['ready', 'echo:greet']);
     await core.stop();
     assert.equal(core.started, false);
   } finally {

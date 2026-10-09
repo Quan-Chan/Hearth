@@ -8,7 +8,7 @@ Logs record only the core's actions and form a continuous timeline. Each log ent
 - source: the object involved in the action (core, module name, external)
 - message: the specific content
 
-Additional structured fields appear by type: event (event name), data, recipients (forwarding list), reason, error, file, removedArrays, command.
+Additional structured fields appear by type: event (event name), data, recipients (forwarding list), reason, error, file, removedObjects, command.
 
 ### Full Type Set (15 Types)
 
@@ -32,9 +32,9 @@ Grouped by category:
 
 ### Module Logs
 
-\`\`\`js
+```js
 ctx.log('Start cooling', room);
-\`\`\`
+```
 
 ## CLI
 
@@ -46,7 +46,7 @@ The cli module in the modules/cli directory provides a terminal interface. Instr
 | start | module | Start a module |
 | stop | module | Stop a module |
 | send | name, targets | Send an event directly; * broadcasts, multiple targets separated by commas, targets need not declare listening |
-| state | none | Query modules and shared arrays |
+| state | none | Query modules and shared objects |
 | exit | none | Deliver the result to the initiator first, then shut down the core |
 
 Local instructions (handled by the cli module itself):
