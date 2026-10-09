@@ -68,8 +68,8 @@ Hearth/
 │   ├── verify-docs.mjs       # 文档事实对照（15 条事实，docs:check 用）
 │   └── check-doc-duplicates.mjs # 跨文档重复检查
 ├── benchmarks/perf.js        # 性能基准（npm run bench）
-├── .github/workflows/ci.yml  # CI：typecheck + build + test + docs:check（Node 22/24）
-├── package.json              # 包定义（依赖仅 yaml；engines >=22）
+├── .github/workflows/ci.yml  # CI：typecheck + build + test + docs:check（Node 24）
+├── package.json              # 包定义（依赖仅 yaml；engines >=24）
 ├── package-lock.json         # 依赖锁定
 ├── tsconfig.json             # 编译配置（src -> dist）
 ├── tsconfig.test.json        # 测试编译配置（src+tests -> .test-build）
